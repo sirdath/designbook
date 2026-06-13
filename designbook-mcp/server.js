@@ -73,7 +73,30 @@ function sectionLines(sections) {
     `- **${s.slot}** → ${s.snippet ? '`' + s.snippet + '`' : '(no match)'}${s.companions && s.companions.length ? ' + ' + s.companions.map((c) => '`' + c + '`').join(', ') : ''}`);
 }
 
+function renderMobileReport(r) {
+  if (r.error) return `## mobile lab\n_${r.error}_`;
+  const s = r.summary || {};
+  const head = `## mobile lab — ${s.screens || 0} screen${s.screens === 1 ? '' : 's'} · score ${r.score}/100\n` +
+    `summary: ${s.smallTaps || 0} small tap target(s) · ${s.safeAreaIssues || 0} safe-area issue(s) · ${s.reachIssues || 0} thumb-reach issue(s)`;
+  const screens = (r.screens || []).map((sc) => {
+    const nav = sc.nav || {};
+    const chips = [
+      nav.hasTabbar ? 'tab bar' : null,
+      nav.hasBack ? 'back' : null,
+      nav.hasFab ? 'FAB' : null,
+      nav.title ? `“${nav.title}”` : null
+    ].filter(Boolean).join(' · ') || 'no nav chrome';
+    const lines = [`### [${sc.ref}] ${sc.shell} — ${sc.box.w}×${sc.box.h} · score ${sc.score}/100`, `nav: ${chips}`];
+    if (sc.warnings && sc.warnings.length) lines.push(...sc.warnings.map((w) => `- ⚠ ${w}`));
+    else lines.push('- ✓ clean — safe areas respected, taps ≥44pt, primary actions in reach');
+    for (const t of sc.tapTargets?.small || []) lines.push(`  · tap < 44pt: \`${t.sel}\` (${t.w}×${t.h})`);
+    return lines.join('\n');
+  });
+  return [head, ...screens].join('\n\n');
+}
+
 function renderReport(r) {
+  if (r.mode === 'mobile' || Array.isArray(r.screens)) return renderMobileReport(r);
   const issues = [];
   if (r.hOverflow) issues.push('- **horizontal scroll present** — something is wider than the viewport');
   for (const o of r.overflowers || []) issues.push(`- overflows right edge: \`${o.sel}\` (right ${o.right}px, width ${o.width}px)`);
@@ -181,20 +204,22 @@ async function main() {
   // ---- book_compose ----
   server.registerTool('book_compose', {
     title: 'Compose a page draft',
-    description: 'Deterministically compose a full themed page scaffold for a genre (+ optional preset/taste axes/seed). DRAFT HERE FIRST — it is free, instant, and uses zero tokens of generation. Then spend model effort only on the delta the brief asks for, verify with book_inspect, and save with book_save_page.',
+    description: 'Deterministically compose a draft for a genre (+ optional preset/taste axes/seed). DRAFT HERE FIRST — free, instant, zero tokens. platform "web" (default) = one scrolling page of sections; platform "mobile" = an app screen FLOW (phones) from the .scr-* shells (see get_skill("mobile-design")). Then spend model effort only on the brief\'s delta, verify with book_inspect, save with book_save_page.',
     inputSchema: {
-      genre: z.string().describe('Page genre: saas, agency, portfolio, ecommerce, restaurant, startup, blog, landing.'),
+      genre: z.string().describe('web genres: saas, agency, portfolio, ecommerce, restaurant, startup, blog, landing. mobile genres: onboarding, social, commerce, health, finance, productivity, media, saas, app.'),
+      platform: z.enum(['web', 'mobile']).optional().describe('"web" (default) or "mobile" (an app screen flow).'),
       preset: z.string().optional().describe('Taste preset name from book_meta (e.g. "clean-saas") — sets all axes coherently.'),
       palette: z.string().optional().describe('Palette name override (e.g. "saas-indigo").'),
       aesthetic: z.string().optional().describe('Aesthetic override: minimal, editorial, energetic, luxury, playful, technical.'),
       density: z.string().optional().describe('Density override: compact, normal, airy.'),
       motion: z.string().optional().describe('Motion override: minimal, standard, playful.'),
       fontPair: z.string().optional().describe('Font pair override (e.g. "grotesk-tech").'),
-      font_pair: z.string().optional().describe('Alias of fontPair (matches the frontendmaxxing compose_page convention).'),
-      seed: z.number().int().min(0).optional().describe('Variety seed — rotates per-slot snippet picks. 0 = house picks.')
+      font_pair: z.string().optional().describe('Alias of fontPair (matches the frontendmaxxing compose convention).'),
+      seed: z.number().int().min(0).optional().describe('Variety seed — rotates per-slot/per-screen picks. 0 = house picks.')
     },
     outputSchema: {
-      theme: z.record(z.string()), sections: z.array(z.any()),
+      platform: z.string().optional(), theme: z.record(z.string()),
+      sections: z.array(z.any()).optional(), screens: z.array(z.any()).optional(),
       coherence: z.any(), warnings: z.array(z.any()), html: z.string()
     },
     annotations: RO
@@ -202,20 +227,24 @@ async function main() {
     if (args.font_pair && !args.fontPair) args.fontPair = args.font_pair;
     const r = await api('POST', '/api/compose', args);
     const t = r.theme || {};
+    const mobile = r.platform === 'mobile';
+    const manifest = mobile
+      ? (r.screens || []).map((s) => `- **${s.screen}** (\`.scr\` ${s.shell}) → ${s.component ? '`' + s.component + '`' : '_(.scr-* shells)_'}`)
+      : sectionLines(r.sections);
     const text = [
-      `# Composed: ${args.genre}${args.preset ? ' · ' + args.preset : ''}`,
+      `# Composed ${mobile ? 'app flow' : 'page'}: ${args.genre}${args.preset ? ' · ' + args.preset : ''}${mobile ? `  (${(r.screens || []).length} screens)` : ''}`,
       `Theme: pal-${t.palette} · ${t.aesthetic} · ${t.fontPair} · ${t.motion} · ${t.density}`,
       coherenceLine(r.coherence),
       r.warnings && r.warnings.length ? '**Warnings:** ' + r.warnings.join(' · ') : '',
       '',
-      '**Section manifest (real snippets to wire in):**',
-      ...sectionLines(r.sections),
+      mobile ? '**Screen manifest (real mobile/ components to wire in):**' : '**Section manifest (real snippets to wire in):**',
+      ...manifest,
       '',
       fenceHtml(r.html)
     ].filter((l) => l !== '').join('\n');
     return {
       content: [{ type: 'text', text }],
-      structuredContent: { theme: t, sections: r.sections || [], coherence: r.coherence || null, warnings: r.warnings || [], html: r.html }
+      structuredContent: { platform: r.platform, theme: t, sections: r.sections, screens: r.screens, coherence: r.coherence || null, warnings: r.warnings || [], html: r.html }
     };
   }));
 
@@ -243,7 +272,7 @@ async function main() {
       slug: z.string().optional().describe('Saved page slug to inspect (provide slug OR html).'),
       html: z.string().optional().describe('Raw HTML to inspect (provide slug OR html).'),
       viewports: z.array(z.string()).optional().describe('Named viewports: iphone-se, iphone-15, iphone-15-max, ipad, ipad-landscape, laptop, desktop, desktop-xl.'),
-      mode: z.enum(['layout', 'perf', 'diagnose', 'element']).optional().describe('layout = fit facts (default) · perf = lag diagnostics (lagScore, reflow/recalc cost, census) · diagnose = full common-issues audit (console errors, 404s, contrast, a11y, undefined vars) · element = point DevTools for one selector (box, computed, parents, overlaps).'),
+      mode: z.enum(['layout', 'perf', 'diagnose', 'element', 'mobile']).optional().describe('layout = fit facts (default) · perf = lag diagnostics (lagScore, reflow/recalc cost, census) · diagnose = full common-issues audit (console errors, 404s, contrast, a11y, undefined vars) · element = point DevTools for one selector (box, computed, parents, overlaps) · mobile = HIG facts for a composed app flow (per-screen safe-area respect, thumb-reach of primary actions, tap targets ≥44pt, native nav conventions). Use mobile mode on compose({platform:"mobile"}) output.'),
       selector: z.string().optional().describe('CSS selector — required for mode "element".'),
       screenshot: z.boolean().optional().describe('Also capture PNGs to book/shots/ (opt-in; facts are the default).')
     },

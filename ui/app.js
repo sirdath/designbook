@@ -16,6 +16,7 @@ const state = {
   tabs: [],                  // [{ id, kind:'preview'|'source', label, slug?, vaultPath?, html?, source? }]
   activeTab: null,
   device: 'desktop',
+  flowMode: 'fit',           // 'fit' | 'actual'  (phone-flow canvas, mobile platform)
   view: 'tab',               // 'tab' | 'devices'  (devices = 3-up diagnostic grid)
   deviceEls: [],
   filesOpen: false,
@@ -68,6 +69,15 @@ function withBase(html, href = '/vault/') {
 function activePreview() {
   const t = state.tabs.find((x) => x.id === state.activeTab);
   return t && t.kind === 'preview' ? t : null;
+}
+
+// A design is a mobile app when its manifest says so, or — robustly, regardless
+// of what the agent recorded — when its markup carries the app-flow signature
+// (the .app-flow row of .scr-frame phones that compose_app/the .scr-* shells emit).
+function isMobilePreview(p) {
+  if (!p) return false;
+  if (p.manifest && p.manifest.platform) return p.manifest.platform === 'mobile';
+  return /class="[^"]*\bapp-flow\b|\bscr-frame\b/.test(p.html || '');
 }
 
 // ---------------------------------------------------------------- chat (real agent)
@@ -278,17 +288,22 @@ function renderCanvas() {
   const preview = t && t.kind === 'preview' ? t : null;
   const source = t && t.kind === 'source' ? t : null;
 
+  const mobile = isMobilePreview(preview);
   $('welcome').hidden = !!t;
   if (!t) renderHome();
-  $('deviceSwitch').hidden = !preview || state.view === 'devices';
+  // platform-specific viewport controls: web gets the device pills, a mobile
+  // app gets the flow controls (Flow / 1:1). Neither shows in the 3-up grid.
+  $('deviceSwitch').hidden = !preview || state.view === 'devices' || mobile;
+  $('mobileSwitch').hidden = !preview || state.view === 'devices' || !mobile;
   const frame = $('pageFrame');
   const solo = $('soloDevice');
+  const flow = $('flowStage');
   const src = $('sourceView');
   const grid = $('deviceRow');
 
-  frame.hidden = true; solo.hidden = true; src.hidden = true; grid.hidden = true;
+  frame.hidden = true; solo.hidden = true; flow.hidden = true; src.hidden = true; grid.hidden = true;
 
-  if (state.view === 'devices' && preview) {
+  if (state.view === 'devices' && preview && !mobile) {
     grid.hidden = false;
     renderDevices(preview.html);
     return;
@@ -299,15 +314,23 @@ function renderCanvas() {
     return;
   }
   if (!preview) return;
+  const key = preview.id + ':' + preview.manifest?.updatedAt;
+  if (mobile) {
+    // the composed app-flow already contains the phone chrome — render the whole
+    // flow and scale it to the stage (Flow) or show it 1:1 with scroll.
+    flow.hidden = false;
+    renderMobileFlow(preview.html, key);
+    return;
+  }
   if (state.device === 'fit') {
     frame.hidden = false;
-    if (frame.dataset.tab !== preview.id + ':' + preview.manifest?.updatedAt) {
+    if (frame.dataset.tab !== key) {
       frame.srcdoc = withBase(preview.html);
-      frame.dataset.tab = preview.id + ':' + preview.manifest?.updatedAt;
+      frame.dataset.tab = key;
     }
   } else {
     solo.hidden = false;
-    renderSoloDevice(preview.html, preview.id + ':' + preview.manifest?.updatedAt);
+    renderSoloDevice(preview.html, key);
   }
 }
 
@@ -348,6 +371,60 @@ function layoutSoloDevice() {
   screen.style.width = Math.round(d.w * scale) + 'px';
   screen.style.height = Math.round(d.h * scale) + 'px';
   iframe.style.transform = `scale(${scale})`;
+}
+
+// ----- phone-flow view (mobile platform) -----
+
+function countScreens(iframe) {
+  try { return iframe.contentDocument.querySelectorAll('.scr-frame').length || 0; }
+  catch { return 0; }
+}
+
+function renderMobileFlow(html, key) {
+  const scaler = $('flowScaler');
+  if (scaler.dataset.key !== key) {
+    // new design — drop any stale HIG facts from the previous one
+    $('flowFacts').hidden = true; $('flowFacts').innerHTML = '';
+    scaler.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.title = 'app flow preview';
+    iframe.setAttribute('sandbox', 'allow-same-origin');
+    // start wide & unconstrained so the flex row lays out at its natural width;
+    // layoutMobileFlow then measures the real content box and scales to fit.
+    iframe.style.width = '4000px';
+    iframe.style.height = '1000px';
+    iframe.srcdoc = withBase(html);
+    iframe.addEventListener('load', layoutMobileFlow);
+    scaler.appendChild(iframe);
+    scaler.dataset.key = key;
+  }
+  layoutMobileFlow();
+}
+
+function layoutMobileFlow() {
+  const scaler = $('flowScaler');
+  const iframe = scaler?.querySelector('iframe');
+  if (!iframe) return;
+  let natW = 1400, natH = 920;
+  try {
+    const doc = iframe.contentDocument;
+    if (doc && doc.body) {
+      const flowEl = doc.querySelector('.app-flow');
+      natW = Math.max(doc.body.scrollWidth, flowEl ? flowEl.scrollWidth : 0) || natW;
+      natH = Math.max(doc.body.scrollHeight, flowEl ? flowEl.scrollHeight : 0) || natH;
+    }
+  } catch { /* not yet loaded — keep the defaults, the load handler reruns this */ }
+  iframe.style.width = natW + 'px';
+  iframe.style.height = natH + 'px';
+  const stage = $('canvasStage');
+  const scale = state.flowMode === 'actual'
+    ? 1
+    : Math.min(1, (stage.clientWidth - 64) / natW, (stage.clientHeight - 110) / natH);
+  iframe.style.transform = `scale(${scale})`;
+  scaler.style.width = Math.round(natW * scale) + 'px';
+  scaler.style.height = Math.round(natH * scale) + 'px';
+  const n = countScreens(iframe);
+  $('flowCaption').textContent = `${n || '—'} screen${n === 1 ? '' : 's'} · ${state.flowMode === 'actual' ? 'actual size — scroll' : 'fit to width'}`;
 }
 
 // ----- 3-up diagnostics (Tools) -----
@@ -437,6 +514,69 @@ async function runInspect(mode) {
     }
   } catch (e) { toast(`inspect failed — ${e.message}`, 'error', 4200); }
   finally { busy(btn, false); }
+}
+
+function relayoutCanvas() {
+  if (state.view === 'devices') layoutDevices();
+  else if (isMobilePreview(activePreview())) layoutMobileFlow();
+  else layoutSoloDevice();
+}
+
+// ----- mobile (HIG) verify — renders into the flow facts panel -----
+
+async function runMobileInspect(kind = 'mobile') {
+  const preview = activePreview();
+  if (!preview) return toast('open a design first', 'error');
+  const btn = kind === 'perf' ? $('perfBtn') : $('inspectBtn');
+  busy(btn, true);
+  $('inspectNote').textContent = kind === 'perf' ? 'profiling…' : 'checking HIG facts per screen…';
+  try {
+    const out = await api('/api/inspect', { method: 'POST', body: { html: preview.html, mode: kind } });
+    const rep = out.reports?.[0];
+    if (kind === 'perf') {
+      renderMobilePerf(rep);
+      $('inspectNote').textContent = rep ? `lagScore ${rep.lagScore}` : 'no report';
+    } else {
+      renderMobileFacts(rep);
+      $('inspectNote').textContent = rep ? `flow score ${rep.score}/100` : 'no report';
+    }
+  } catch (e) { toast(`inspect failed — ${e.message}`, 'error', 4200); }
+  finally { busy(btn, false); }
+}
+
+function renderMobileFacts(rep) {
+  const box = $('flowFacts');
+  box.hidden = false;
+  if (!rep || rep.error) { box.innerHTML = `<div class="db-flow-screen-warn">${esc(rep?.error || 'no report')}</div>`; return; }
+  const s = rep.summary || {};
+  const head = `<div class="db-flow-screen">
+    <div class="db-flow-screen-head"><span>Mobile lab</span><span class="db-flow-shell">${s.screens || 0} screens</span><span class="db-flow-score">${rep.score}/100</span></div>
+    <div class="db-flow-chips"><span class="db-flow-chip">${s.smallTaps || 0} small taps</span><span class="db-flow-chip">${s.safeAreaIssues || 0} safe-area</span><span class="db-flow-chip">${s.reachIssues || 0} reach</span></div>
+  </div>`;
+  const screens = (rep.screens || []).map((sc) => {
+    const nav = sc.nav || {};
+    const chips = [nav.hasTabbar ? 'tab bar' : null, nav.hasBack ? 'back' : null, nav.hasFab ? 'FAB' : null, nav.title ? `“${esc(nav.title)}”` : null]
+      .filter(Boolean).map((c) => `<span class="db-flow-chip">${c}</span>`).join('') || '<span class="db-flow-chip">no nav chrome</span>';
+    const warns = (sc.warnings && sc.warnings.length)
+      ? sc.warnings.map((w) => `<div class="db-flow-screen-warn">⚠ ${esc(w)}</div>`).join('')
+      : `<div class="db-flow-screen-ok">✓ clean — safe areas, taps ≥44pt, actions in reach</div>`;
+    return `<div class="db-flow-screen">
+      <div class="db-flow-screen-head"><span>${esc(sc.shell)}</span><span class="db-flow-shell">${sc.box.w}×${sc.box.h}</span><span class="db-flow-score">${sc.score}/100</span></div>
+      <div class="db-flow-chips">${chips}</div>${warns}
+    </div>`;
+  }).join('');
+  box.innerHTML = head + screens;
+}
+
+function renderMobilePerf(rep) {
+  const box = $('flowFacts');
+  box.hidden = false;
+  if (!rep || rep.error) { box.innerHTML = `<div class="db-flow-screen-warn">${esc(rep?.error || 'no report')}</div>`; return; }
+  const cls = rep.lagScore >= 85 ? 'db-flow-screen-ok' : 'db-flow-screen-warn';
+  box.innerHTML = `<div class="db-flow-screen">
+    <div class="db-flow-screen-head"><span>Perf</span><span class="db-flow-score">lag ${rep.lagScore}/100</span></div>
+    <div class="${cls}">layout ${rep.layoutCostMs}ms · recalc ${rep.recalcCostMs}ms · dom ${rep.domNodes} · anims ${rep.runningAnimations}</div>
+  </div>`;
 }
 
 // ---------------------------------------------------------------- design files tree
@@ -590,7 +730,7 @@ function initResizer() {
     document.body.classList.remove('db-dragging');
     const w = getComputedStyle(document.documentElement).getPropertyValue('--db-chat-w').replace('px', '').trim();
     localStorage.setItem('db-chat-w', w);
-    layoutSoloDevice();
+    relayoutCanvas();
   });
 }
 
@@ -645,27 +785,27 @@ async function boot() {
   $('drawerClose').addEventListener('click', () => toggleDrawer(false));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleDrawer(false); });
   $('devicesBtn').addEventListener('click', () => {
+    if (isMobilePreview(activePreview())) { toast('mobile already shows the whole screen flow', '', 2400); return; }
     state.view = state.view === 'devices' ? 'tab' : 'devices';
     renderCanvas();
     $('devicesBtn').classList.toggle('is-on', state.view === 'devices');
   });
-  $('inspectBtn').addEventListener('click', () => runInspect('layout'));
-  $('perfBtn').addEventListener('click', () => runInspect('perf'));
+  $('inspectBtn').addEventListener('click', () => isMobilePreview(activePreview()) ? runMobileInspect('mobile') : runInspect('layout'));
+  $('perfBtn').addEventListener('click', () => isMobilePreview(activePreview()) ? runMobileInspect('perf') : runInspect('perf'));
   $('homeBtn').addEventListener('click', goHome);
   $('backBtn').addEventListener('click', goHome);
   $('projectName').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); renameProject(); e.target.blur(); } });
   $('projectName').addEventListener('blur', renameProject);
   for (const pill of document.querySelectorAll('.db-dpill')) {
     pill.addEventListener('click', () => {
-      state.device = pill.dataset.dev;
-      for (const p of document.querySelectorAll('.db-dpill')) p.classList.toggle('is-on', p === pill);
+      // scope the active state to this pill's own switch (web devices vs flow)
+      for (const p of pill.parentElement.querySelectorAll('.db-dpill')) p.classList.toggle('is-on', p === pill);
+      if (pill.dataset.dev) state.device = pill.dataset.dev;
+      if (pill.dataset.mflow) state.flowMode = pill.dataset.mflow;
       renderCanvas();
     });
   }
-  window.addEventListener('resize', () => {
-    if (state.view === 'devices') layoutDevices();
-    else layoutSoloDevice();
-  });
+  window.addEventListener('resize', relayoutCanvas);
   initResizer();
 
   try {
@@ -680,6 +820,11 @@ async function boot() {
   }
   await Promise.all([refreshBriefs(), refreshPages()]);
   renderWork();   // pinned Home tab + home grid
+  // deep-link: /?open=<slug> jumps straight into a design (shareable links)
+  const openSlug = new URLSearchParams(location.search).get('open');
+  if (openSlug && state.pages.some((p) => p.slug === openSlug)) {
+    await openProject(openSlug).catch(() => {});
+  }
   connectSSE();
 }
 

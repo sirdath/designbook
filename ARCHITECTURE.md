@@ -6,6 +6,34 @@ deterministic is free and instant; the model is engaged only for bespoke work)
 and **agent ergonomics** (an AI engine gets structured facts — never pixels or
 blind HTML dumps — through one tool surface shared by both engines).
 
+## Platforms — web and mobile are first-class peers
+
+A project has a **`platform: 'web' | 'mobile'`** (in its manifest). The whole
+stack branches on it, but the *spine is shared*: one book, one MCP tool surface,
+one facts-lab, one image-gen, the same dual engines and save-gate. Only the
+**compose model**, the **structural primitives**, and the **lab checks** differ.
+
+| | web | mobile |
+| --- | --- | --- |
+| Output shape | ONE scrolling page of stacked sections | a FLOW of discrete app screens |
+| Primitives | `structure/structure.css` `.s-*` shells | `structure/app-shell.css` `.scr-*` screen shells (device frame, status bar, nav, safe areas, tab bar, FAB, sheet, list rows) |
+| Compose | `GENRE_SEQUENCES` → sections | `MOBILE_FLOWS` → ordered screens, each a `.scr` in a device frame |
+| Components | `components/`, `blocks/`, … | `mobile/` (`app-*` screens + `ios-*` chrome) inside `.scr-*` shells |
+| Canvas/lab default | desktop 1440, scaled | iPhone flow board — screens side-by-side in phone frames |
+| Lab facts | overflow, tap≥44, tiny-text, contrast | the above **+ HIG**: safe-area respect (content clear of notch/home-indicator), thumb-reach (primary action in bottom third), tab-bar/nav conventions, no hover-only affordances |
+| Export | single HTML / ZIP of files | the screen-flow HTML/CSS spec + design-tokens file + handoff doc (Phase-2: runnable Expo/React-Native via react-native-web) |
+
+**What transfers unchanged:** the taste layer (palette/font/motion tokens — the
+*tokens* are platform-agnostic; mobile adds its own density/tap-size scale), the
+book/manifest/revisions model, `book_view`/`book_generate_image`/`book_save_asset`,
+the save-gate + doom-loop guard, the briefs/agent loop.
+
+**Tier framing (owner decision):** ship native-quality mobile *UI design* (Tier
+2 — screen flows as a visual spec a dev implements) to perfection; keep the
+architecture extensible so *runnable* native (Tier 3, via Expo / react-native-web
+so headless Chrome stays the renderer and the facts-lab keeps working) drops in
+as a later phase. Do NOT pursue raw SwiftUI/Compose needing simulators.
+
 ```
 designbook/
   ARCHITECTURE.md      ← this contract (agents: read before touching anything)

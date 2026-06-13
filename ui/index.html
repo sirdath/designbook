@@ -66,6 +66,10 @@
         <button class="db-dpill" data-dev="iphone-15" title="393 × 852">Phone</button>
         <button class="db-dpill" data-dev="fit" title="fill at real width">Fill</button>
       </div>
+      <div class="db-float-device db-device-inline" id="mobileSwitch" hidden>
+        <button class="db-dpill is-on" data-mflow="fit" title="all screens, scaled to fit">Flow</button>
+        <button class="db-dpill" data-mflow="actual" title="actual size — scroll">1:1</button>
+      </div>
       <button class="db-btn db-btn-sm db-btn-ghosty" id="toolsBtn" aria-expanded="false">Tools</button>
       <button class="db-btn db-btn-sm db-btn-primary" id="shareBtn" title="download this design as a ZIP of files (index.html + assets/)">Share</button>
     </div>
@@ -97,6 +101,13 @@
         <div class="db-solo-device" id="soloDevice" hidden>
           <div class="db-solo-screen" id="soloScreen"></div>
           <div class="db-solo-caption" id="soloCaption"></div>
+        </div>
+        <div class="db-flow" id="flowStage" hidden>
+          <div class="db-flow-scroll" id="flowScroll">
+            <div class="db-flow-scaler" id="flowScaler"></div>
+          </div>
+          <div class="db-flow-caption" id="flowCaption"></div>
+          <div class="db-flow-facts" id="flowFacts" hidden></div>
         </div>
         <pre class="db-source" id="sourceView" hidden></pre>
         <div class="db-device-row" id="deviceRow" hidden></div>

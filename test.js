@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os';
 
 import { createBook, slugify } from './lib/book.js';
 import { loadVault, injectBase } from './lib/vault.js';
-import { VIEWPORTS, DEFAULT_VIEWPORTS, findChrome } from './lib/inspect.js';
+import { VIEWPORTS, DEFAULT_VIEWPORTS, findChrome, MODES } from './lib/inspect.js';
+import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
 import { runBrief } from './engines/sdk.js';
 
 const SERVER = process.env.DESIGNBOOK_URL || 'http://localhost:4747';
@@ -126,6 +127,17 @@ test('lib/vault.js — load, compose, coherence, injectBase', async (t) => {
     assert.ok(c.score >= 0 && c.score <= 100);
   });
 
+  await t.test('composeApp(mobile) builds a phone flow with stamped screen refs', () => {
+    assert.ok(Array.isArray(vault.mobileGenres) && vault.mobileGenres.length >= 8, 'mobile genres exposed');
+    const out = vault.composeApp({ genre: 'social', seed: 0 });
+    assert.equal(out.platform, 'mobile');
+    assert.ok(out.screens.length >= 2, 'multi-screen flow');
+    // each device frame is stamped data-db-ref="scr<i>-<shell>" for diagnostics
+    const refs = (out.html.match(/data-db-ref="scr\d+-[a-z]+"/g) || []);
+    assert.equal(refs.length, out.screens.length, 'one stamped ref per screen frame');
+    assert.match(out.html, /class="app-flow"/);
+  });
+
   await t.test('injectBase inserts <base> right after <head> and is idempotent', () => {
     const html = '<!doctype html><html><head><meta charset="utf-8"></head><body>hi</body></html>';
     const once = injectBase(html, '/vault/');
@@ -139,6 +151,29 @@ test('lib/vault.js — load, compose, coherence, injectBase', async (t) => {
   });
 });
 
+// ------------------------------------------------------------- lib/handoff.js
+
+test('lib/handoff.js — mobile FLOW.md from a composed app', async () => {
+  const vault = await loadVault();
+  const out = vault.composeApp({ genre: 'finance', seed: 0 });
+  assert.ok(isMobileHtml(out.html), 'composed app reads as mobile');
+  assert.equal(isMobileHtml('<body class="struct"><section>web</section></body>'), false, 'a web page is not mobile');
+
+  const md = buildFlowHandoff({
+    html: out.html,
+    manifest: { title: 'Money App', slug: 'money-app', genre: 'finance', platform: 'mobile' },
+    palettes: vault.palettes,
+  });
+  assert.match(md, /Money App — mobile handoff/);
+  assert.match(md, /## Screen flow \(\d+\)/);
+  assert.match(md, /## Design tokens/);
+  assert.match(md, /390 × 844/);           // device geometry present
+  assert.match(md, /≥ 44 pt/);             // HIG tap-target rule present
+  // the resolved palette name from the composed <body> is reflected
+  const pal = (out.html.match(/\bpal-([a-z0-9-]+)/) || [])[1];
+  if (pal) assert.ok(md.includes('pal-' + pal), 'handoff names the composed palette');
+});
+
 // ------------------------------------------------------------- lib/inspect.js
 
 test('lib/inspect.js — viewport table sane, chrome discoverable', () => {
@@ -149,6 +184,9 @@ test('lib/inspect.js — viewport table sane, chrome discoverable', () => {
     assert.ok(Number.isInteger(v.height) && v.height >= 667, `${name} height sane`);
   }
   for (const n of DEFAULT_VIEWPORTS) assert.ok(VIEWPORTS[n], `default viewport ${n} is named`);
+
+  assert.ok(MODES.includes('mobile'), 'mobile (HIG) inspect mode is registered');
+  assert.deepEqual(MODES, ['layout', 'perf', 'diagnose', 'element', 'mobile']);
 
   const chrome = findChrome();
   assert.equal(typeof chrome, 'string', 'findChrome returns a path on this machine');

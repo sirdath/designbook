@@ -17,6 +17,7 @@ import { createBook, slugify } from './lib/book.js';
 import { inspect, VIEWPORTS, DEFAULT_VIEWPORTS } from './lib/inspect.js';
 import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
+import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
 import { generateImage, findMflux } from './lib/imagegen.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -82,13 +83,19 @@ async function main() {
   });
 
   function composeWithScore(body) {
-    const r = vault.compose({
+    const opts = {
       genre: body.genre, preset: body.preset, palette: body.palette,
       aesthetic: body.aesthetic, density: body.density, motion: body.motion,
       fontPair: body.fontPair || body.font_pair, seed: body.seed,
-    });
+    };
+    if (body.platform === 'mobile') {
+      const r = vault.composeApp(opts);
+      const c = vault.coherence(r.html);
+      return { platform: 'mobile', html: r.html, theme: r.theme, screens: r.screens, warnings: r.warnings, coherence: { score: c.score, counts: c.counts } };
+    }
+    const r = vault.compose(opts);
     const c = vault.coherence(r.html);
-    return { html: r.html, theme: r.theme, sections: r.sections, warnings: r.warnings, coherence: { score: c.score, counts: c.counts } };
+    return { platform: 'web', html: r.html, theme: r.theme, sections: r.sections, warnings: r.warnings, coherence: { score: c.score, counts: c.counts } };
   }
 
   const server = createServer(async (req, res) => {
@@ -104,6 +111,7 @@ async function main() {
       if (path === '/api/meta') {
         return send(res, 200, {
           genres: vault.genres,
+          mobileGenres: vault.mobileGenres,
           presets: vault.presets.presets.map((p) => ({ name: p.name, label: p.label, aesthetic: p.aesthetic, palette: p.palette, fontPair: p.fontPair, motion: p.motion, density: p.density, summary: p.summary })),
           palettes: vault.palettes.map((p) => ({ name: p.name, mode: p.mode, group: p.group, accent: p.tokens.accent, bg: p.tokens.bg })),
           aesthetics: vault.aesthetics, densities: vault.densities, motions: vault.motions, fontPairs: vault.fontPairs,
@@ -295,6 +303,13 @@ async function main() {
           return `${pre}assets/${flat}${post}`;
         });
         entries.unshift({ name: `${slugName}/index.html`, data: html });
+        // mobile designs ship a developer handoff (flow + tokens + device geometry)
+        if (page.manifest.platform === 'mobile' || isMobileHtml(page.html)) {
+          entries.push({
+            name: `${slugName}/FLOW.md`,
+            data: buildFlowHandoff({ html: page.html, manifest: page.manifest, palettes: vault.palettes }),
+          });
+        }
         const zip = zipStore(entries);
         res.writeHead(200, {
           'Content-Type': 'application/zip',
