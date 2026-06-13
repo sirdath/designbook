@@ -1,0 +1,436 @@
+#!/usr/bin/env node
+/* ============================================
+   designbook · server.js — the app server
+   ============================================
+   Zero-dep node:http server: JSON API + SSE + static mounts. Layer 0 of the
+   architecture — every deterministic capability lives here; both engines and
+   the UI consume the same endpoints. See ARCHITECTURE.md for the contract.
+
+   Run:  node server.js   (PORT=4747, FRONTENDMAXXING_PATH to override vault)
+   ============================================ */
+import { createServer } from 'node:http';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { join, normalize, extname, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadVault, injectBase } from './lib/vault.js';
+import { createBook, slugify } from './lib/book.js';
+import { inspect, VIEWPORTS, DEFAULT_VIEWPORTS } from './lib/inspect.js';
+import { parseIntent } from './lib/intent.js';
+import { zipStore } from './lib/zip.js';
+import { generateImage, findMflux } from './lib/imagegen.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.PORT || 4747);
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.ico': 'image/x-icon', '.md': 'text/markdown; charset=utf-8',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+};
+
+function send(res, code, body, type) {
+  const buf = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
+  res.writeHead(code, {
+    'Content-Type': type || 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store',
+  });
+  res.end(buf);
+}
+function err(res, code, message) { send(res, code, { error: message }); }
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (c) => {
+      data += c;
+      if (data.length > 32 * 1024 * 1024) { reject(new Error('body too large')); req.destroy(); }
+    });
+    req.on('end', () => {
+      if (!data) return resolve({});
+      try { resolve(JSON.parse(data)); } catch { reject(new Error('invalid JSON body')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+// static file serving with traversal guard
+function serveStatic(res, rootDir, relPath, { baseHref } = {}) {
+  const safe = normalize(relPath).replace(/^([/\\])+|\.\.(?=[/\\]|$)/g, '');
+  let p = join(rootDir, safe);
+  if (!p.startsWith(rootDir)) return err(res, 403, 'forbidden');
+  if (existsSync(p) && statSync(p).isDirectory()) p = join(p, 'index.html');
+  if (!existsSync(p) || !statSync(p).isFile()) return err(res, 404, 'not found: ' + relPath);
+  const type = MIME[extname(p).toLowerCase()] || 'application/octet-stream';
+  let body = readFileSync(p);
+  if (baseHref && type.startsWith('text/html')) body = injectBase(body.toString('utf8'), baseHref);
+  send(res, 200, body, type);
+}
+
+async function main() {
+  const vault = await loadVault();
+  const book = createBook(__dirname);
+
+  // ---- SSE ----
+  const sseClients = new Set();
+  book.onChange((evt) => {
+    const line = `data: ${JSON.stringify(evt)}\n\n`;
+    for (const res of sseClients) { try { res.write(line); } catch { sseClients.delete(res); } }
+  });
+
+  function composeWithScore(body) {
+    const r = vault.compose({
+      genre: body.genre, preset: body.preset, palette: body.palette,
+      aesthetic: body.aesthetic, density: body.density, motion: body.motion,
+      fontPair: body.fontPair || body.font_pair, seed: body.seed,
+    });
+    const c = vault.coherence(r.html);
+    return { html: r.html, theme: r.theme, sections: r.sections, warnings: r.warnings, coherence: { score: c.score, counts: c.counts } };
+  }
+
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url, `http://localhost:${PORT}`);
+    const path = url.pathname;
+    const method = req.method;
+
+    try {
+      // ===== API =====
+      if (path === '/api/health') {
+        return send(res, 200, { ok: true, vault: vault.root, snippets: vault.entries.length, palettes: vault.palettes.length, presets: vault.presets.presets.length });
+      }
+      if (path === '/api/meta') {
+        return send(res, 200, {
+          genres: vault.genres,
+          presets: vault.presets.presets.map((p) => ({ name: p.name, label: p.label, aesthetic: p.aesthetic, palette: p.palette, fontPair: p.fontPair, motion: p.motion, density: p.density, summary: p.summary })),
+          palettes: vault.palettes.map((p) => ({ name: p.name, mode: p.mode, group: p.group, accent: p.tokens.accent, bg: p.tokens.bg })),
+          aesthetics: vault.aesthetics, densities: vault.densities, motions: vault.motions, fontPairs: vault.fontPairs,
+          viewports: Object.entries(VIEWPORTS).map(([name, v]) => ({ name, ...v })), defaultViewports: DEFAULT_VIEWPORTS,
+          settings: book.getSettings(),
+        });
+      }
+      if (path === '/api/compose' && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.genre) return err(res, 400, 'genre required');
+        return send(res, 200, composeWithScore(body));
+      }
+      if (path === '/api/variants' && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.genre) return err(res, 400, 'genre required');
+        const seeds = Array.isArray(body.seeds) && body.seeds.length ? body.seeds : [0, 1, 2];
+        const variants = seeds.map((seed) => {
+          const v = composeWithScore({ ...body, ...(body.overrides || {}), seed });
+          return { seed, html: v.html, theme: v.theme, coherence: v.coherence };
+        });
+        return send(res, 200, { variants });
+      }
+      if (path === '/api/coherence' && method === 'POST') {
+        const body = await readBody(req);
+        return send(res, 200, vault.coherence(String(body.html || '')));
+      }
+      if (path === '/api/search') {
+        const q = url.searchParams.get('q') || '';
+        const limit = Math.min(Number(url.searchParams.get('limit')) || 10, 30);
+        const hits = vault.search(q, limit).map(({ entry, score }) => ({ path: entry.path, score, description: entry.desc, global: entry.global || undefined }));
+        return send(res, 200, { hits });
+      }
+      if (path === '/api/snippet') {
+        const p = url.searchParams.get('path') || '';
+        const source = vault.snippetSource(p);
+        if (source == null) return err(res, 404, 'not in INDEX: ' + p);
+        return send(res, 200, { path: p, source });
+      }
+
+      // pages
+      if (path === '/api/pages' && method === 'GET') return send(res, 200, { pages: book.listPages() });
+      if (path === '/api/pages' && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.html) return err(res, 400, 'html required');
+        if (!body.title && !body.slug) return err(res, 400, 'title or slug required');
+        return send(res, 200, { manifest: book.savePage(body) });
+      }
+      const pageMatch = path.match(/^\/api\/pages\/([a-z0-9-]+)$/);
+      if (pageMatch) {
+        const slug = pageMatch[1];
+        if (method === 'GET') {
+          const page = book.getPage(slug);
+          return page ? send(res, 200, page) : err(res, 404, 'no page: ' + slug);
+        }
+        if (method === 'PUT') {
+          const body = await readBody(req);
+          const m = book.updatePage(slug, body);
+          return m ? send(res, 200, { manifest: m }) : err(res, 404, 'no page: ' + slug);
+        }
+        if (method === 'DELETE') {
+          return book.deletePage(slug) ? send(res, 200, { ok: true }) : err(res, 404, 'no page: ' + slug);
+        }
+      }
+
+      // briefs
+      if (path === '/api/briefs' && method === 'GET') {
+        return send(res, 200, { briefs: book.listBriefs(url.searchParams.get('status') || undefined) });
+      }
+      if (path === '/api/briefs' && method === 'POST') {
+        const body = await readBody(req);
+        // Chat → deterministic action (lib/intent.js). Taste-only messages
+        // resolve instantly (kind 'taste', already done); genre/taste messages
+        // get a free deterministic draft attached; everything else queues for
+        // the model engine untouched.
+        const intent = parseIntent(body.text, vault, body.context || {});
+        const extra = {};
+        if (intent.smalltalk) {
+          extra.kind = 'chat';
+        } else if (intent.tasteOnly) {
+          extra.kind = 'taste';
+          extra.taste = { ...intent.taste, ...(intent.preset ? { preset: intent.preset } : {}) };
+        } else if (intent.draft) {
+          const seedBase = Math.abs([...String(body.text)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)) % 50;
+          extra.draft = { genre: intent.draft.genre, preset: intent.draft.preset || null, seedBase, taste: intent.taste };
+        }
+        const brief = book.addBrief({ ...body, ...extra });
+        if (brief.kind === 'taste') {
+          book.updateBrief(brief.id, { status: 'done', summary: 'Re-themed instantly — 0 tokens.' });
+          brief.status = 'done';
+        } else if (brief.kind === 'chat') {
+          book.updateBrief(brief.id, { status: 'done', summary: intent.smalltalk });
+          brief.status = 'done';
+          brief.summary = intent.smalltalk;
+        }
+        return send(res, 200, { brief });
+      }
+      // chat → a REAL agent run (the SDK engine over the designbook MCP tools).
+      // No keyword tricks, no presets: the model decides everything. Returns
+      // { brief, needsSetup? } — needsSetup carries instructions when no engine
+      // is available, so the UI can render a proper setup card.
+      if (path === '/api/chat' && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.text || !String(body.text).trim()) return err(res, 400, 'text required');
+        if (body.model) book.setSettings({ sdk: { ...(book.getSettings().sdk || {}), model: body.model } });
+        const brief = book.addBrief({ text: body.text, engine: 'sdk', kind: 'agent', pageSlug: body.slug || null });
+        let engine;
+        try { engine = await import('./engines/sdk.js'); }
+        catch {
+          book.updateBrief(brief.id, { status: 'error', summary: 'Agent SDK not installed.' });
+          return send(res, 200, { brief: book.listBriefs().find((b) => b.id === brief.id), needsSetup: 'Run `npm install` in designbook/ and set ANTHROPIC_API_KEY, then restart the server.' });
+        }
+        const result = await engine.runBrief(brief, { book, vault, port: PORT });
+        if (result.error && /KEY|not installed/i.test(result.error)) {
+          return send(res, 200, { brief: book.listBriefs().find((b) => b.id === brief.id), needsSetup: result.error + ' — set ANTHROPIC_API_KEY (uses your subscription’s SDK credit pool) and restart, or connect a Claude Code session to the designbook MCP server.' });
+        }
+        return send(res, 200, { brief: book.listBriefs().find((b) => b.id === brief.id) });
+      }
+
+      // project assets: the agent's drawings (svg, ascii, css, small images)
+      const assetMatch = path.match(/^\/api\/pages\/([a-z0-9-]+)\/assets$/);
+      if (assetMatch && method === 'GET') {
+        return send(res, 200, { assets: book.listAssets(assetMatch[1]) });
+      }
+      if (assetMatch && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.name || body.content === undefined) return err(res, 400, 'name and content required');
+        try {
+          const saved = book.saveAsset(assetMatch[1], body.name, body.content, { base64: body.encoding === 'base64' });
+          return send(res, 200, { asset: saved });
+        } catch (e) { return err(res, 400, e.message); }
+      }
+
+      // design-files tree for a project: index.html + the vault assets it links
+      const filesMatch = path.match(/^\/api\/pages\/([a-z0-9-]+)\/files$/);
+      if (filesMatch && method === 'GET') {
+        const page = book.getPage(filesMatch[1]);
+        if (!page) return err(res, 404, 'no page: ' + filesMatch[1]);
+        const assets = [];
+        const seen = new Set();
+        const re = /(?:<link[^>]*href|<script[^>]*src)=["']([^"']+)["']/gi;
+        let m;
+        while ((m = re.exec(page.html))) {
+          const href = m[1];
+          if (/^https?:|^data:/i.test(href)) continue;
+          const rel = href.replace(/^\/vault\//, '').replace(/^\.?\//, '');
+          if (seen.has(rel)) continue;
+          seen.add(rel);
+          try {
+            const st = statSync(join(vault.root, rel));
+            assets.push({ name: rel.split('/').pop(), vaultPath: rel, size: st.size });
+          } catch { assets.push({ name: rel.split('/').pop(), vaultPath: rel, size: 0, missing: true }); }
+        }
+        return send(res, 200, {
+          slug: page.manifest.slug,
+          files: [{ name: 'index.html', size: Buffer.byteLength(page.html), modified: page.manifest.updatedAt }],
+          assets,
+          projectAssets: book.listAssets(page.manifest.slug),
+          revisions: page.manifest.revisions || 0,
+        });
+      }
+
+      // Share: a ZIP of the design files — <slug>/index.html + <slug>/assets/*
+      // (links rewritten to ./assets/…), exactly the folder a developer expects.
+      if (path === '/api/export.zip' && method === 'GET') {
+        const slug = url.searchParams.get('slug');
+        const page = slug && book.getPage(slugify(slug));
+        if (!page) return err(res, 404, 'no page: ' + slug);
+        let html = page.html.replace(/<base[^>]*>\s*/gi, '');
+        const entries = [];
+        const added = new Set();
+        const slugName = page.manifest.slug;
+        // project assets first (the agent's own drawings) — /book/…/assets/x → assets/x
+        for (const a of book.listAssets(slugName)) {
+          entries.push({ name: `${slugName}/assets/${a.name}`, data: readFileSync(book.assetPath(slugName, a.name)) });
+          added.add(a.name);
+        }
+        html = html.split(`/book/pages/${slugName}/assets/`).join('assets/');
+        // vault dependencies → assets/<flattened>
+        html = html.replace(/((?:<link[^>]*href|<script[^>]*src)=["'])([^"']+)(["'])/gi, (full, pre, href, post) => {
+          if (/^https?:|^data:|^assets\//i.test(href)) return full;
+          const rel = href.replace(/^\/vault\//, '').replace(/^\.?\//, '');
+          const flat = rel.replace(/\//g, '-');
+          if (!added.has(flat)) {
+            try {
+              entries.push({ name: `${slugName}/assets/${flat}`, data: readFileSync(join(vault.root, rel)) });
+              added.add(flat);
+            } catch { return full; }
+          }
+          return `${pre}assets/${flat}${post}`;
+        });
+        entries.unshift({ name: `${slugName}/index.html`, data: html });
+        const zip = zipStore(entries);
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="${page.manifest.slug}.zip"`,
+          'Content-Length': zip.length,
+        });
+        return res.end(zip);
+      }
+
+      // single-file export: inline every vault-relative <link>/<script> so the
+      // page is portable anywhere (http(s) urls left alone)
+      if (path === '/api/export' && method === 'POST') {
+        const body = await readBody(req);
+        let html = body.html;
+        if (!html && body.slug) {
+          const page = book.getPage(slugify(body.slug));
+          if (!page) return err(res, 404, 'no page: ' + body.slug);
+          html = page.html;
+        }
+        if (!html) return err(res, 400, 'html or slug required');
+        html = String(html).replace(/<base[^>]*>\s*/gi, '');
+        html = html.replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi, (tag) => {
+          const m = tag.match(/href=["']([^"']+)["']/i);
+          if (!m || /^https?:/i.test(m[1])) return tag;
+          const rel = m[1].replace(/^\/vault\//, '').replace(/^\.?\//, '');
+          try { return '<style>\n' + readFileSync(join(vault.root, rel), 'utf8') + '\n</style>'; } catch { return tag; }
+        });
+        html = html.replace(/<script[^>]*\ssrc=["']([^"']+)["'][^>]*>\s*<\/script>/gi, (tag, src) => {
+          if (/^https?:/i.test(src)) return tag;
+          const rel = src.replace(/^\/vault\//, '').replace(/^\.?\//, '');
+          try { return '<script>\n' + readFileSync(join(vault.root, rel), 'utf8') + '\n</script>'; } catch { return tag; }
+        });
+        return send(res, 200, { html, bytes: Buffer.byteLength(html) });
+      }
+      const briefMatch = path.match(/^\/api\/briefs\/([a-z0-9-]+)$/);
+      if (briefMatch && method === 'PUT') {
+        const body = await readBody(req);
+        const b = book.updateBrief(briefMatch[1], body);
+        return b ? send(res, 200, { brief: b }) : err(res, 404, 'no brief: ' + briefMatch[1]);
+      }
+      if (briefMatch && method === 'DELETE') {
+        return book.deleteBrief(briefMatch[1]) ? send(res, 200, { ok: true }) : err(res, 404, 'no brief: ' + briefMatch[1]);
+      }
+
+      // settings
+      if (path === '/api/settings' && method === 'GET') return send(res, 200, book.getSettings());
+      if (path === '/api/settings' && method === 'PUT') {
+        const body = await readBody(req);
+        return send(res, 200, book.setSettings(body));
+      }
+
+      // SDK engine
+      if (path === '/api/generate' && method === 'POST') {
+        const body = await readBody(req);
+        const brief = book.listBriefs().find((b) => b.id === body.briefId);
+        if (!brief) return err(res, 404, 'no brief: ' + body.briefId);
+        let engine;
+        try { engine = await import('./engines/sdk.js'); }
+        catch { return err(res, 501, 'SDK engine not installed. Run: npm install (and set ANTHROPIC_API_KEY).'); }
+        const result = await engine.runBrief(brief, { book, vault, port: PORT });
+        return send(res, result.error ? 502 : 200, result);
+      }
+
+      // local photo generation → saved straight into the project's assets
+      if (path === '/api/generate-image' && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.slug) return err(res, 400, 'slug required (images are project assets)');
+        if (!body.prompt) return err(res, 400, 'prompt required');
+        const r = await generateImage(body);
+        if (r.error) return err(res, 502, r.error);
+        const name = (body.name && String(body.name).replace(/\.(png|jpg|jpeg|webp)$/i, '') || 'image-' + r.seed) + '.png';
+        try {
+          const asset = book.saveAsset(slugify(body.slug), name, r.png.toString('base64'), { base64: true });
+          return send(res, 200, { asset, width: r.width, height: r.height, seed: r.seed, ms: r.ms });
+        } catch (e) { return err(res, 400, e.message); }
+      }
+      if (path === '/api/generate-image' && method === 'GET') {
+        return send(res, 200, { available: !!findMflux(), engine: 'mflux z-image-turbo (local, Apple MLX)' });
+      }
+
+      // viewport lab
+      if (path === '/api/inspect' && method === 'POST') {
+        const body = await readBody(req);
+        let html = body.html;
+        let label = body.label;
+        if (!html && body.slug) {
+          const page = book.getPage(slugify(body.slug));
+          if (!page) return err(res, 404, 'no page: ' + body.slug);
+          html = page.html;
+          label = label || page.manifest.slug;
+        }
+        if (!html) return err(res, 400, 'html or slug required');
+        const out = await inspect({
+          html, vaultRoot: vault.root,
+          bookDir: book.dir,
+          viewports: body.viewports, mode: body.mode, selector: body.selector,
+          screenshot: !!body.screenshot, fullPage: !!body.fullPage, shotsDir: book.shotsDir,
+          label: label ? slugify(label) : undefined,
+        });
+        if (out.error) return err(res, 500, out.error);
+        // shots are served under /book/shots/
+        for (const r of out.reports || []) {
+          if (r.screenshotPath) r.screenshotUrl = '/book/shots/' + r.screenshotPath.split('/').pop();
+        }
+        return send(res, 200, out);
+      }
+
+      // SSE
+      if (path === '/api/events') {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store',
+          'Connection': 'keep-alive', 'Access-Control-Allow-Origin': '*',
+        });
+        res.write(`data: ${JSON.stringify({ type: 'hello' })}\n\n`);
+        sseClients.add(res);
+        req.on('close', () => sseClients.delete(res));
+        return;
+      }
+
+      // ===== static mounts =====
+      if (path.startsWith('/vault/')) return serveStatic(res, vault.root, path.slice('/vault/'.length));
+      if (path.startsWith('/book/')) return serveStatic(res, book.dir, path.slice('/book/'.length), { baseHref: '/vault/' });
+      return serveStatic(res, join(__dirname, 'ui'), path === '/' ? 'index.html' : path);
+    } catch (e) {
+      return err(res, 500, e.message || String(e));
+    }
+  });
+
+  server.listen(PORT, () => {
+    process.stdout.write(`designbook · http://localhost:${PORT} · vault ${vault.root} (${vault.entries.length} snippets, ${vault.presets.presets.length} presets)\n`);
+  });
+  return server;
+}
+
+const invokedDirectly = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop());
+if (invokedDirectly) {
+  main().catch((e) => { process.stderr.write('designbook fatal: ' + (e.stack || e.message) + '\n'); process.exit(1); });
+}
+export { main };

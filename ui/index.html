@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Design Book</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='5' y='6' width='4.2' height='20' rx='2.1' fill='%23e8a33d'/><rect x='12' y='8' width='15' height='3.4' rx='1.7' fill='%23e8a33d' fill-opacity='.9'/><rect x='12' y='14.3' width='15' height='3.4' rx='1.7' fill='%23e8a33d' fill-opacity='.6'/><rect x='12' y='20.6' width='10' height='3.4' rx='1.7' fill='%23e8a33d' fill-opacity='.38'/></svg>">
+  <link rel="stylesheet" href="/vault/structure/structure.css">
+  <link rel="stylesheet" href="/vault/colors/palettes.css">
+  <link rel="stylesheet" href="/vault/taste/density.css">
+  <link rel="stylesheet" href="/vault/taste/motion.css">
+  <link rel="stylesheet" href="/vault/taste/aesthetic.css">
+  <link rel="stylesheet" href="/vault/taste/fonts.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="struct pal-midnight" data-aesthetic="technical" data-font-pair="grotesk-tech" data-motion="standard" data-density="compact">
+
+<div class="db-app db-app-v3">
+
+  <!-- ============ CHAT RAIL (left, resizable) ============ -->
+  <aside class="db-chat" id="chatRail" aria-label="conversation">
+    <div class="db-project-head">
+      <button class="db-home-btn" id="homeBtn" title="home — all designs">
+        <svg class="db-logo" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="5" y="6" width="4.2" height="20" rx="2.1" fill="var(--accent)"/>
+          <rect x="12" y="8" width="15" height="3.4" rx="1.7" fill="var(--accent)" fill-opacity=".9"/>
+          <rect x="12" y="14.3" width="15" height="3.4" rx="1.7" fill="var(--accent)" fill-opacity=".6"/>
+          <rect x="12" y="20.6" width="10" height="3.4" rx="1.7" fill="var(--accent)" fill-opacity=".38"/>
+        </svg>
+      </button>
+      <button class="db-back-btn" id="backBtn" hidden title="back to all designs">←</button>
+      <input class="db-project-name" id="projectName" value="Untitled design" spellcheck="false"
+        title="name this design — saves on Enter">
+      <span class="db-status" id="serverStatus" title="server">
+        <span class="db-dot" id="statusDot"></span>
+      </span>
+    </div>
+
+    <div class="db-chat-thread" id="chatThread"></div>
+
+    <div class="db-chat-composer">
+      <textarea id="briefText" class="db-textarea" rows="3"
+        placeholder="Describe what you want to create…"></textarea>
+      <div class="db-composer-row">
+        <select id="modelSelect" class="db-select db-select-quiet" title="model for the agent">
+          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+          <option value="claude-opus-4-8">Opus 4.8</option>
+        </select>
+        <button id="sendBtn" class="db-btn db-btn-primary db-sendwide">Send</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="db-resizer" id="chatResizer" title="drag to resize"></div>
+
+  <!-- ============ WORKSPACE (right) ============ -->
+  <main class="db-work" id="work">
+
+    <div class="db-workbar">
+      <button class="db-tabish" id="filesBtn" aria-expanded="false">▤ Design Files</button>
+      <div class="db-filetabs" id="fileTabs"></div>
+      <span class="db-workbar-spacer"></span>
+      <div class="db-float-device db-device-inline" id="deviceSwitch" hidden>
+        <button class="db-dpill is-on" data-dev="desktop" title="1440 × 900, scaled">Desktop</button>
+        <button class="db-dpill" data-dev="ipad" title="820 × 1180">Tablet</button>
+        <button class="db-dpill" data-dev="iphone-15" title="393 × 852">Phone</button>
+        <button class="db-dpill" data-dev="fit" title="fill at real width">Fill</button>
+      </div>
+      <button class="db-btn db-btn-sm db-btn-ghosty" id="toolsBtn" aria-expanded="false">Tools</button>
+      <button class="db-btn db-btn-sm db-btn-primary" id="shareBtn" title="download this design as a ZIP of files (index.html + assets/)">Share</button>
+    </div>
+
+    <div class="db-workbody">
+
+      <!-- design files tree -->
+      <aside class="db-files" id="filesPanel" hidden>
+        <div class="db-files-head">
+          <h3 class="db-subtitle">Design files</h3>
+        </div>
+        <div class="db-files-tree" id="filesTree"></div>
+      </aside>
+
+      <!-- the canvas -->
+      <div class="db-canvas-stage" id="canvasStage">
+        <div class="db-welcome" id="welcome">
+          <svg class="db-welcome-logo" viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="5" y="6" width="4.2" height="20" rx="2.1" fill="var(--accent)"/>
+            <rect x="12" y="8" width="15" height="3.4" rx="1.7" fill="var(--accent)" fill-opacity=".9"/>
+            <rect x="12" y="14.3" width="15" height="3.4" rx="1.7" fill="var(--accent)" fill-opacity=".6"/>
+            <rect x="12" y="20.6" width="10" height="3.4" rx="1.7" fill="var(--accent)" fill-opacity=".38"/>
+          </svg>
+          <h1 class="db-welcome-title">What should we design?</h1>
+          <p class="db-welcome-sub">Tell the agent what you want. It designs with the component vault, draws its own illustrations, checks every device, and saves the files here.</p>
+          <div class="db-home" id="homeGrid"></div>
+        </div>
+        <iframe class="db-canvas-frame" id="pageFrame" title="page preview" sandbox="allow-same-origin" hidden></iframe>
+        <div class="db-solo-device" id="soloDevice" hidden>
+          <div class="db-solo-screen" id="soloScreen"></div>
+          <div class="db-solo-caption" id="soloCaption"></div>
+        </div>
+        <pre class="db-source" id="sourceView" hidden></pre>
+        <div class="db-device-row" id="deviceRow" hidden></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ TOOLS DRAWER ============ -->
+  <aside class="db-drawer" id="drawer" hidden aria-label="tools">
+    <div class="db-drawer-head">
+      <h2 class="db-panel-title">Tools</h2>
+      <button class="db-btn db-btn-sm" id="drawerClose" type="button">✕</button>
+    </div>
+    <div class="db-drawer-body">
+      <section class="db-panel">
+        <h3 class="db-subtitle">Verify</h3>
+        <div class="db-row">
+          <button class="db-btn" id="devicesBtn" type="button">3-up devices</button>
+          <button class="db-btn" id="inspectBtn" type="button">Inspect</button>
+          <button class="db-btn" id="perfBtn" type="button">Perf</button>
+        </div>
+        <p class="db-hint" id="inspectNote">exact iPhone · iPad · desktop facts</p>
+      </section>
+      <section class="db-panel">
+        <h3 class="db-subtitle">Server</h3>
+        <p class="db-hint" id="vaultLine"></p>
+      </section>
+    </div>
+  </aside>
+
+</div>
+
+<div class="db-toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

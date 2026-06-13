@@ -1,0 +1,14 @@
+# dependencies (re-installed via npm)
+node_modules/
+**/node_modules/
+
+# the book = the user's own saved designs + screenshots; the server recreates
+# book/ on first run, so a fresh clone starts clean
+book/
+
+# logs / OS / secrets (the API key lives in env only, never on disk)
+*.log
+.DS_Store
+Thumbs.db
+.env
+*.local

@@ -1,0 +1,30 @@
+{
+  "name": "designbook-mcp",
+  "version": "1.0.0",
+  "description": "MCP server exposing the Design Book workbench (compose, inspect, pages, briefs) to AI agents — a thin stdio→HTTP bridge to the designbook core server.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "anthropic",
+    "claude",
+    "designbook",
+    "frontendmaxxing"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "./server.js",
+  "bin": {
+    "designbook-mcp": "./server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "smoke": "node smoke.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
