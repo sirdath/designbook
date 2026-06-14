@@ -18,6 +18,8 @@ import { createBook, slugify } from './lib/book.js';
 import { loadVault, injectBase } from './lib/vault.js';
 import { VIEWPORTS, DEFAULT_VIEWPORTS, findChrome, MODES } from './lib/inspect.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
+import { autofix } from './lib/autofix.js';
+import { gateFindings, gateFindingsMobile, IMAGERY_MANDATORY } from './designbook-mcp/server.js';
 import { runBrief } from './engines/sdk.js';
 
 const SERVER = process.env.DESIGNBOOK_URL || 'http://localhost:4747';
@@ -186,12 +188,88 @@ test('lib/inspect.js — viewport table sane, chrome discoverable', () => {
   for (const n of DEFAULT_VIEWPORTS) assert.ok(VIEWPORTS[n], `default viewport ${n} is named`);
 
   assert.ok(MODES.includes('mobile'), 'mobile (HIG) inspect mode is registered');
-  assert.deepEqual(MODES, ['layout', 'perf', 'diagnose', 'element', 'mobile']);
+  assert.ok(MODES.includes('taste'), 'taste (composition facts) inspect mode is registered');
+  assert.deepEqual(MODES, ['layout', 'perf', 'diagnose', 'element', 'mobile', 'taste']);
 
   const chrome = findChrome();
   assert.equal(typeof chrome, 'string', 'findChrome returns a path on this machine');
   assert.ok(existsSync(chrome), 'chrome binary exists');
   // full inspect() is integration-verified against the running server — skipped here (slow)
+});
+
+// ------------------------------------------------------------- lib/autofix.js
+
+test('autofix — injects reveal observer + repairs missing alt, idempotently', () => {
+  // .s-reveal with no script → observer injected
+  const blank = '<body><div class="s-reveal"><h1>hi</h1></div></body>';
+  const a = autofix(blank);
+  assert.match(a.html, /IntersectionObserver/, 'reveal observer injected');
+  assert.ok(a.fixed.some((f) => /reveal/.test(f)), 'reports the reveal fix');
+  // idempotent — a second pass changes nothing
+  assert.equal(autofix(a.html).fixed.length, 0, 'no double-injection');
+
+  // already has a reveal mechanism → untouched
+  assert.equal(autofix(blank.replace('</body>', '<script>IntersectionObserver</script></body>')).fixed.length, 0);
+
+  // <img> without alt → alt="" + marker; decorative mediaBox <div> untouched
+  const img = '<body><img src="hero.jpg"><div class="s-reveal" style="background:var(--surface)"></div></body>';
+  const b = autofix(img);
+  assert.match(b.html, /<img alt="" data-todo-alt/, 'alt added to img');
+  assert.ok(b.fixed.some((f) => /alt/.test(f)));
+  // an img that already has alt is left alone
+  assert.equal(autofix('<body><img src="x" alt="real"></body>').fixed.some((f) => /alt/.test(f)), false);
+});
+
+// ------------------------------------------------------------- save-gate (designbook-mcp)
+
+test('gateFindings — prescriptive findings + imagery craft-floor', () => {
+  // a clean, imagery-bearing page on a non-visual genre passes
+  const clean = { score: 95, authenticity: { imageCount: 2, tells: [] } };
+  assert.deepEqual(gateFindings(clean, {}, { genre: 'saas' }), [], 'clean page → no findings');
+
+  // visual-first genre with 0 images trips the craft-floor
+  const noImg = { score: 88, authenticity: { imageCount: 0, tells: ['NO-IMAGERY'] } };
+  const eco = gateFindings(noImg, {}, { genre: 'ecommerce' });
+  const floor = eco.find((f) => f.check === 'imagery-floor');
+  assert.ok(floor, 'ecommerce + 0 images → imagery-floor finding');
+  assert.match(floor.code, /^imagery-floor:ecommerce$/);
+  assert.ok(floor.fix.includes('book_generate_image'), 'fix names the remedy tool');
+
+  // same page on an exempt genre does NOT trip the floor
+  assert.equal(gateFindings(noImg, {}, { genre: 'saas' }).some((f) => f.check === 'imagery-floor'), false, 'saas is exempt');
+  assert.ok(IMAGERY_MANDATORY.has('portfolio') && !IMAGERY_MANDATORY.has('blog'));
+
+  // gradient-slop (coherence < 70) is rejected with an imagery-pointing fix
+  const slop = { score: 48, authenticity: { imageCount: 0, tells: ['GRADIENT-HEAVY-NO-IMAGERY', 'NO-IMAGERY'] } };
+  const sf = gateFindings(slop, {}, { genre: 'landing' }).find((f) => f.check === 'coherence');
+  assert.ok(sf && sf.fix.includes('book_generate_image'), 'gradient slop fix points at imagery');
+
+  // every finding is prescriptive: check + code + cause + fix, never a bare name
+  const diag = { console: [{ level: 'error', message: 'x is not defined' }], layout: { hOverflow: true, overflowers: [{ sel: 'div.wide', right: 520, width: 600 }] }, css: { undefinedVars: ['--ghost'] } };
+  for (const f of gateFindings(noImg, diag, { genre: 'ecommerce' })) {
+    assert.ok(f.check && f.code && f.cause && f.fix, `finding fully formed: ${JSON.stringify(f)}`);
+  }
+});
+
+test('gateFindingsMobile — HIG lens, never web-overflow', () => {
+  const okCoh = { score: 80, authenticity: { tells: [] } };
+  // a clean composed flow passes
+  const clean = { summary: { score: 96, screens: 3, safeAreaIssues: 0, reachIssues: 0 }, screens: [{ shell: 'feed', warnings: [] }] };
+  assert.deepEqual(gateFindingsMobile(okCoh, clean), [], 'clean HIG flow → no findings');
+
+  // safe-area + reach violations are rejected (the things the web gate misses)
+  const bad = { summary: { score: 62, screens: 3, safeAreaIssues: 1, reachIssues: 2 },
+    screens: [{ shell: 'detail', warnings: ['top-level screen (feed) has no tab bar'] }] };
+  const ff = gateFindingsMobile(okCoh, bad);
+  const checks = ff.map((f) => f.check);
+  assert.ok(checks.includes('safe-area'), 'rejects safe-area violations');
+  assert.ok(checks.includes('thumb-reach'), 'rejects out-of-reach primary actions');
+  assert.ok(checks.includes('mobile-hig'), 'rejects a low overall HIG score');
+  assert.ok(checks.includes('nav-convention'), 'rejects missing native nav');
+  for (const f of ff) assert.ok(f.check && f.code && f.cause && f.fix, 'prescriptive');
+
+  // never blocks on a missing/error mobile report (don't fail a save we cannot assess)
+  assert.deepEqual(gateFindingsMobile(okCoh, { error: 'no .scr-frame' }), []);
 });
 
 // ------------------------------------------------------------- engines/sdk.js

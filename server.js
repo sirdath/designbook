@@ -18,6 +18,7 @@ import { inspect, VIEWPORTS, DEFAULT_VIEWPORTS } from './lib/inspect.js';
 import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
+import { autofix } from './lib/autofix.js';
 import { generateImage, findMflux } from './lib/imagegen.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -90,12 +91,15 @@ async function main() {
     };
     if (body.platform === 'mobile') {
       const r = vault.composeApp(opts);
-      const c = vault.coherence(r.html);
-      return { platform: 'mobile', html: r.html, theme: r.theme, screens: r.screens, warnings: r.warnings, coherence: { score: c.score, counts: c.counts } };
+      const { html, fixed } = autofix(r.html);
+      const c = vault.coherence(html);
+      return { platform: 'mobile', html, theme: r.theme, screens: r.screens, warnings: r.warnings, autofixed: fixed, coherence: { score: c.score, counts: c.counts, authenticity: c.authenticity } };
     }
     const r = vault.compose(opts);
-    const c = vault.coherence(r.html);
-    return { platform: 'web', html: r.html, theme: r.theme, sections: r.sections, warnings: r.warnings, coherence: { score: c.score, counts: c.counts } };
+    // self-heal at source so the agent never inherits a blank/inaccessible draft
+    const { html, fixed } = autofix(r.html);
+    const c = vault.coherence(html);
+    return { platform: 'web', html, theme: r.theme, sections: r.sections, warnings: r.warnings, autofixed: fixed, coherence: { score: c.score, counts: c.counts, authenticity: c.authenticity } };
   }
 
   const server = createServer(async (req, res) => {
@@ -395,21 +399,30 @@ async function main() {
         const body = await readBody(req);
         let html = body.html;
         let label = body.label;
+        let pagePlatform = null;
         if (!html && body.slug) {
           const page = book.getPage(slugify(body.slug));
           if (!page) return err(res, 404, 'no page: ' + body.slug);
           html = page.html;
           label = label || page.manifest.slug;
+          pagePlatform = page.manifest.platform || null;
         }
         if (!html) return err(res, 400, 'html or slug required');
+        // auto-route: an app-flow page with no explicit mode gets the mobile (HIG)
+        // lab, not the web probe — running the 2600px layout probe on a phone flow
+        // reports spurious overflow and zero HIG facts.
+        let mode = body.mode;
+        let autoRoutedMobile = false;
+        if (!mode && (pagePlatform === 'mobile' || isMobileHtml(html))) { mode = 'mobile'; autoRoutedMobile = true; }
         const out = await inspect({
           html, vaultRoot: vault.root,
           bookDir: book.dir,
-          viewports: body.viewports, mode: body.mode, selector: body.selector,
+          viewports: body.viewports, mode, selector: body.selector,
           screenshot: !!body.screenshot, fullPage: !!body.fullPage, shotsDir: book.shotsDir,
           label: label ? slugify(label) : undefined,
         });
         if (out.error) return err(res, 500, out.error);
+        if (autoRoutedMobile) out.autoRoutedMobile = true;
         // shots are served under /book/shots/
         for (const r of out.reports || []) {
           if (r.screenshotPath) r.screenshotUrl = '/book/shots/' + r.screenshotPath.split('/').pop();

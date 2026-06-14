@@ -13,10 +13,13 @@
      Verify with book_inspect facts. Spend model effort only on
      the delta the brief asks for. Save with manifest + briefId.
 
-   Tools (names locked by ARCHITECTURE.md):
-     book_overview · book_meta · book_compose · book_coherence
-     book_inspect · book_list_pages · book_get_page · book_save_page
-     book_briefs · book_claim_brief · book_complete_brief
+   Tools (15):
+     orient   book_overview · book_meta
+     draft    book_compose · book_variants · book_coherence
+     enrich   book_generate_image · book_save_asset      (anti-slop: real imagery)
+     verify   book_inspect · book_view
+     persist  book_list_pages · book_get_page · book_save_page
+     briefs   book_briefs · book_claim_brief · book_complete_brief
    ============================================ */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -60,12 +63,105 @@ function guard(fn) {
 // =====================================================
 function fenceHtml(html) { return '```html\n' + html + '\n```'; }
 
+// Visual-first genres read as AI wireframes without real imagery — they carry
+// a craft-floor (≥1 image) the save-gate enforces. saas/blog/startup are exempt.
+export const IMAGERY_MANDATORY = new Set(['ecommerce', 'portfolio', 'restaurant', 'agency', 'landing']);
+
+// The save-gate's deterministic findings. Each is {check, code, cause, fix}:
+// `check` drives the loop fingerprint, `code` is the stable string for
+// structuredContent.violations, and cause→fix is the one-step remedy the agent
+// reads. NEVER a bare name — every rejection tells the agent exactly what to do.
+// Pure (args only) so it unit-tests without booting the MCP server.
+// the authenticity-aware coherence reject, shared by the web and mobile gates
+function coherenceFinding(coh) {
+  if ((coh?.score ?? 100) >= 70) return null;
+  const slop = (coh?.authenticity?.tells || []).includes('GRADIENT-HEAVY-NO-IMAGERY');
+  return { check: 'coherence', code: `coherence:${coh.score}`,
+    cause: `score ${coh.score}/100 — ${slop ? 'gradient-heavy with no real imagery (the #1 AI tell)' : 'too many cohesion violations'}`,
+    fix: slop ? 'book_generate_image for a hero and remove one gradient' : 'swap hardcoded hex/px/ms for tokens (see the per-type hints below)' };
+}
+
+export function gateFindings(coh, diag, ctx) {
+  const f = [];
+  const cf = coherenceFinding(coh);
+  if (cf) f.push(cf);
+  const errs = (diag?.console || []).filter((c) => c.level === 'error');
+  if (errs.length) f.push({ check: 'console-errors', code: `console-errors:${errs.length}`,
+    cause: `${errs.length} JS error(s): ${errs.slice(0, 2).map((e) => e.message).join('; ').slice(0, 140)}`,
+    fix: 'fix the first error — it usually cascades and clears the rest' });
+  if ((diag?.resources || []).length) f.push({ check: 'failed-resources', code: `failed-resources:${diag.resources.length}`,
+    cause: `${diag.resources.length} asset(s) 404: ${diag.resources.slice(0, 2).map((r) => r.url).join(', ').slice(0, 140)}`,
+    fix: 'correct the href/src, or book_save_asset the missing file then reference it' });
+  if (diag?.layout?.hOverflow) {
+    const o = (diag.layout.overflowers || [])[0];
+    f.push({ check: 'hOverflow', code: 'hOverflow@iphone-15',
+      cause: o ? `${o.sel} reaches ${o.right}px on a 393px phone${o.width ? ` (width ${o.width}px)` : ''}` : 'an element is wider than the phone viewport',
+      fix: 'cap the widest element: max-width:100% / flex-wrap:wrap / min-width:0 on the flex child' });
+  }
+  if ((diag?.css?.undefinedVars || []).length) f.push({ check: 'undefined-vars', code: `undefined-vars:${diag.css.undefinedVars.join(',')}`,
+    cause: `CSS var(s) referenced but never defined: ${diag.css.undefinedVars.join(', ')}`,
+    fix: 'define them on :root/.struct, or give each a var(--x, fallback)' });
+  if ((diag?.render?.invisibleContent || []).length) {
+    const iv = diag.render.invisibleContent[0];
+    f.push({ check: 'invisible-content', code: `invisible-content:${diag.render.invisibleContent.length}`,
+      cause: `${diag.render.invisibleContent.length} element(s) occupy space but render invisible${iv ? ` — e.g. ${iv.sel} (${iv.cause})` : ''}. A human sees a blank/broken page.`,
+      fix: iv && /reveal/.test(iv.cause) ? 'the reveal script never ran — ensure the IntersectionObserver script is present, or remove .s-reveal' : 'an element is opacity:0 / visibility:hidden — make it visible or remove it' });
+  }
+  // imagery craft-floor — visual-first genres must carry real imagery
+  const genre = String(ctx?.genre || '').toLowerCase();
+  if (IMAGERY_MANDATORY.has(genre) && coh?.authenticity?.imageCount === 0) {
+    f.push({ check: 'imagery-floor', code: `imagery-floor:${genre}`,
+      cause: `a ${genre} page with 0 images reads as an AI wireframe (the differentiator is real imagery)`,
+      fix: 'book_generate_image for the hero/products → book_save_asset → reference them; or Illustrations.mount() for vector scenes' });
+  }
+  return f;
+}
+
+// The mobile save-gate — composed app flows DON'T trip web-overflow (.app-flow
+// is overflow-x:auto), so the web gate would wave through a flow with content
+// under the status bar, primary actions out of thumb-reach, or no native nav.
+// This runs the mobile (HIG) lab instead. NEVER rejects on board-width overflow.
+// `mob` is an inspect mode:'mobile' report ({summary, screens}). Pure.
+export function gateFindingsMobile(coh, mob) {
+  const f = [];
+  const cf = coherenceFinding(coh);
+  if (cf) f.push(cf);
+  if (!mob || mob.error) return f; // couldn't assess HIG — don't block on that
+  const s = mob.summary || {};
+  if ((s.score ?? 100) < 70) f.push({ check: 'mobile-hig', code: `mobile-hig:${s.score}`,
+    cause: `mobile HIG score ${s.score}/100 across ${s.screens || 0} screen(s)`,
+    fix: 'fix the per-screen warnings below (safe-area / tap-target / nav)' });
+  if (s.safeAreaIssues > 0) f.push({ check: 'safe-area', code: `safe-area:${s.safeAreaIssues}`,
+    cause: `${s.safeAreaIssues} safe-area violation(s) — content under the status bar or controls in the home-indicator strip`,
+    fix: 'keep content inside .scr-body; bottom bars (.scr-cta / .scr-tabbar) already pad the home indicator' });
+  if (s.reachIssues > 0) f.push({ check: 'thumb-reach', code: `thumb-reach:${s.reachIssues}`,
+    cause: `${s.reachIssues} primary action(s) above the one-handed thumb-reach zone`,
+    fix: 'move the primary CTA into a bottom .scr-cta bar (lower third of the screen)' });
+  const navGaps = (mob.screens || []).filter((sc) => (sc.warnings || []).some((w) => /tab bar|nav chrome|back affordance/.test(w)));
+  if (navGaps.length) f.push({ check: 'nav-convention', code: `nav-convention:${navGaps.length}`,
+    cause: `${navGaps.length} screen(s) missing native nav: ${navGaps.map((sc) => sc.shell).join(', ')}`,
+    fix: 'add .scr-tabbar to top-level screens; a ‹ back affordance to pushed/detail screens' });
+  return f;
+}
+
 function coherenceLine(c) {
   if (!c) return '';
   const counts = c.counts && Object.keys(c.counts).length
     ? ' (' + Object.entries(c.counts).map(([k, v]) => `${k}:${v}`).join(' · ') + ')'
     : '';
-  return `Coherence: ${c.score}/100${counts}`;
+  let line = `Coherence: ${c.score}/100${counts}`;
+  // surface the authenticity deficit the instant the agent drafts — imagery is
+  // the differentiator, and an imageless gradient page is the #1 "AI tell".
+  const a = c.authenticity;
+  if (a) {
+    if (a.tells && a.tells.includes('GRADIENT-HEAVY-NO-IMAGERY')) {
+      line += `\n⚠ AI-TELL: gradient-heavy with **0 images** — generate a hero (book_generate_image) or mount an illustration, and drop a gradient. This currently fails the save-gate.`;
+    } else if (a.imageCount === 0) {
+      line += `\n→ imagery: **0 images** on the page. Real imagery is the biggest "custom, not AI" signal — book_generate_image (photos) or svg/illustrations.js (vector scenes). book_save_asset to attach.`;
+    }
+    if (a.motionSignals === 0) line += `\n→ motion: none yet — a reveal-on-scroll or tasteful transition lifts it out of "wireframe".`;
+  }
+  return line;
 }
 
 function sectionLines(sections) {
@@ -95,8 +191,44 @@ function renderMobileReport(r) {
   return [head, ...screens].join('\n\n');
 }
 
+function renderDiagnoseReport(r) {
+  const out = [`## diagnose — ${r.viewport} · score ${r.score}/100`];
+  const errs = (r.console || []).filter((c) => c.level === 'error');
+  errs.slice(0, 5).forEach((e) => out.push(`- ✗ console.error: ${e.message}${e.source ? ` (${e.source})` : ''}`));
+  (r.resources || []).slice(0, 5).forEach((x) => out.push(`- ✗ failed to load: ${x.url}`));
+  // render-truth first — it's the "looks fine in facts, blank to a human" class
+  (r.render?.invisibleContent || []).slice(0, 6).forEach((x) => out.push(`- ✗ INVISIBLE: \`${x.sel}\` — ${x.cause}${x.sample ? ` "${x.sample}"` : ''}`));
+  (r.render?.collapsedSections || []).forEach((x) => out.push(`- ✗ collapsed: \`${x.sel}\` (${x.height}px tall, has content)`));
+  if (r.layout?.hOverflow) out.push('- ✗ horizontal overflow on this viewport');
+  (r.a11y?.contrastFails || []).slice(0, 4).forEach((x) => out.push(`- ⚠ contrast ${x.ratio} < ${x.required}: \`${x.sel}\`${x.sample ? ` "${x.sample}"` : ''}`));
+  if ((r.a11y?.missingAlt || []).length) out.push(`- ⚠ ${r.a11y.missingAlt.length} image(s) missing alt`);
+  if ((r.css?.undefinedVars || []).length) out.push(`- ⚠ undefined CSS vars: ${r.css.undefinedVars.join(', ')}`);
+  if (out.length === 1) out.push('✓ clean — no console errors, no invisible/collapsed content, no overflow, a11y OK');
+  return out.join('\n');
+}
+
+function renderTasteReport(r) {
+  if (r.error) return `## taste\n_${r.error}_`;
+  const t = r.typeScale || {}, c = r.color || {}, fn = r.fonts || {};
+  const out = [
+    `## taste — score ${r.tasteScore}/100`,
+    `type: display ${t.display}px / body ${t.body}px = **${t.ratio}× hierarchy** · ${t.distinctSizes} distinct sizes`,
+    `fonts: ${(fn.families || []).join(', ') || '—'}${fn.hasCustomFont ? '' : '  ⚠ system-only'}`,
+    `color: ${c.gradients} gradient(s) · ${c.images} image(s) · ${c.glass} glass · ${c.borderCards} left-border card(s)`
+  ];
+  if ((r.tells || []).length) {
+    out.push('', '**Slop tells:**');
+    r.tells.forEach((x) => out.push(`- ⚠ ${x.tell}${x.count !== undefined ? ` (${x.count})` : ''} — ${x.note}`));
+  } else {
+    out.push('', '✓ no slop tells — reads custom, not templated');
+  }
+  return out.join('\n');
+}
+
 function renderReport(r) {
   if (r.mode === 'mobile' || Array.isArray(r.screens)) return renderMobileReport(r);
+  if (r.mode === 'diagnose') return renderDiagnoseReport(r);
+  if (r.mode === 'taste') return renderTasteReport(r);
   const issues = [];
   if (r.hOverflow) issues.push('- **horizontal scroll present** — something is wider than the viewport');
   for (const o of r.overflowers || []) issues.push(`- overflows right edge: \`${o.sel}\` (right ${o.right}px, width ${o.width}px)`);
@@ -118,10 +250,11 @@ function briefLine(b) {
 const WORKFLOW = [
   '**THE WORKFLOW (per brief):**',
   '1. `book_claim_brief(id)` — marks it `working`, returns the brief + page context.',
-  '2. `book_compose({genre, preset?, …})` — draft deterministically. FREE and instant; never hand-write a scaffold.',
+  '2. `book_compose({genre, preset?, …})` — draft deterministically. FREE and instant; never hand-write a scaffold. (`book_variants` composes a few seeds at once and keeps the best.)',
   '3. Apply only the delta the brief asks for to the composed HTML.',
-  '4. `book_inspect({html, viewports?})` — verify with structured facts across devices (no screenshots needed).',
-  '5. `book_save_page({title, html, briefId})` — saves the page AND auto-completes the brief.'
+  '4. **Make it real, not a wireframe** — the draft ships with 0 images. Add real imagery: `book_generate_image` (local photo gen) or mount `svg/illustrations.js` vector scenes, then `book_save_asset` them. Imagery is the #1 "custom, not AI-slop" signal; visual-first genres (ecommerce/portfolio/restaurant/agency/landing) REQUIRE ≥1 image to clear the save-gate. `book_view` to eyeball composition only when facts aren\'t enough.',
+  '5. `book_inspect({html})` — verify with structured facts (no screenshots): mode:"diagnose" for the full audit, mode:"mobile" for app flows.',
+  '6. `book_save_page({title, html, manifest:{genre}, briefId})` — saves AND auto-completes the brief. The save-gate rejects with one-step `check → fix` findings if anything is off.'
 ].join('\n');
 
 // =====================================================
@@ -135,7 +268,7 @@ async function main() {
   // ---- book_overview ----
   server.registerTool('book_overview', {
     title: 'Design Book overview',
-    description: 'One-call orientation: what the book is, vault stats, queued brief count, and the brief workflow. Call this first. Efficiency contract: draft with book_compose first — deterministic and free. Verify with book_inspect facts. Spend model effort only on the delta the brief asks for.',
+    description: 'One-call orientation: what the book is, vault stats, queued brief count, the brief workflow, and the full toolset incl. the anti-slop trio (book_generate_image / book_save_asset for real imagery, book_view to see it). Call this first. Efficiency contract: draft free with book_compose, make it real with imagery (drafts are imageless wireframes), verify with book_inspect facts, spend model effort only on the delta the brief asks for.',
     inputSchema: {},
     outputSchema: {
       ok: z.boolean(), vault: z.string(), snippets: z.number(), palettes: z.number(), presets: z.number(),
@@ -156,6 +289,8 @@ async function main() {
       queued.length ? queued.map(briefLine).join('\n') : '_Queue is empty — nothing to claim._',
       '',
       WORKFLOW,
+      '',
+      '**Make it custom, not slop:** every draft is an imageless wireframe. `book_generate_image` renders real photos locally; `svg/illustrations.js` (Illustrations.get/mount) gives vector scenes; `book_save_asset` attaches them. Real imagery + a little motion is what separates "custom-made" from "AI-generated" — and the coherence score now flags the deficit on every draft.',
       '',
       '**Efficiency contract:** draft with `book_compose` first — deterministic and free. Verify with `book_inspect` facts (never pixels unless asked). Spend model effort only on the delta the brief asks for.'
     ].join('\n');
@@ -204,7 +339,7 @@ async function main() {
   // ---- book_compose ----
   server.registerTool('book_compose', {
     title: 'Compose a page draft',
-    description: 'Deterministically compose a draft for a genre (+ optional preset/taste axes/seed). DRAFT HERE FIRST — free, instant, zero tokens. platform "web" (default) = one scrolling page of sections; platform "mobile" = an app screen FLOW (phones) from the .scr-* shells (see get_skill("mobile-design")). Then spend model effort only on the brief\'s delta, verify with book_inspect, save with book_save_page.',
+    description: 'Deterministically compose a draft for a genre (+ optional preset/taste axes/seed). DRAFT HERE FIRST — free, instant, zero tokens. platform "web" (default) = one scrolling page of sections; platform "mobile" = an app screen FLOW (phones) from the .scr-* shells (see get_skill("mobile-design")). The draft is a WIREFRAME — it ships with grey media placeholders and 0 images, so its coherence carries an imagery deficit. Real imagery is the difference between "AI slop" and "custom-made": call book_generate_image (photos) or mount svg/illustrations.js (vector scenes) and book_save_asset them. Visual-first genres (ecommerce/portfolio/restaurant/agency/landing) REQUIRE ≥1 real image to clear the save-gate. Then spend model effort only on the brief\'s delta, verify with book_inspect, save with book_save_page.',
     inputSchema: {
       genre: z.string().describe('web genres: saas, agency, portfolio, ecommerce, restaurant, startup, blog, landing. mobile genres: onboarding, social, commerce, health, finance, productivity, media, saas, app.'),
       platform: z.enum(['web', 'mobile']).optional().describe('"web" (default) or "mobile" (an app screen flow).'),
@@ -220,7 +355,7 @@ async function main() {
     outputSchema: {
       platform: z.string().optional(), theme: z.record(z.string()),
       sections: z.array(z.any()).optional(), screens: z.array(z.any()).optional(),
-      coherence: z.any(), warnings: z.array(z.any()), html: z.string()
+      coherence: z.any(), warnings: z.array(z.any()), autofixed: z.array(z.string()).optional(), html: z.string()
     },
     annotations: RO
   }, guard(async (args) => {
@@ -235,6 +370,7 @@ async function main() {
       `# Composed ${mobile ? 'app flow' : 'page'}: ${args.genre}${args.preset ? ' · ' + args.preset : ''}${mobile ? `  (${(r.screens || []).length} screens)` : ''}`,
       `Theme: pal-${t.palette} · ${t.aesthetic} · ${t.fontPair} · ${t.motion} · ${t.density}`,
       coherenceLine(r.coherence),
+      r.autofixed && r.autofixed.length ? '🔧 auto-healed: ' + r.autofixed.join(' · ') : '',
       r.warnings && r.warnings.length ? '**Warnings:** ' + r.warnings.join(' · ') : '',
       '',
       mobile ? '**Screen manifest (real mobile/ components to wire in):**' : '**Section manifest (real snippets to wire in):**',
@@ -244,7 +380,58 @@ async function main() {
     ].filter((l) => l !== '').join('\n');
     return {
       content: [{ type: 'text', text }],
-      structuredContent: { platform: r.platform, theme: t, sections: r.sections, screens: r.screens, coherence: r.coherence || null, warnings: r.warnings || [], html: r.html }
+      structuredContent: { platform: r.platform, theme: t, sections: r.sections, screens: r.screens, coherence: r.coherence || null, warnings: r.warnings || [], autofixed: r.autofixed || [], html: r.html }
+    };
+  }));
+
+  // ---- book_variants ----
+  server.registerTool('book_variants', {
+    title: 'Compose N variants, keep the best',
+    description: 'Compose several seeded drafts of the same genre AT ONCE and rank them by coherence — the "explore in parallel, keep the winner" move. Returns a ranked table (seed · theme · score · tells) plus ONLY the winning variant\'s HTML; losers report byte counts, not bodies, to save tokens. Re-run book_compose({genre, seed}) to pull a loser\'s HTML. Same axes as book_compose. Use this instead of composing once when you want range before committing.',
+    inputSchema: {
+      genre: z.string().describe('Genre to vary (web or mobile genre — see book_compose).'),
+      platform: z.enum(['web', 'mobile']).optional().describe('"web" (default) or "mobile".'),
+      seeds: z.array(z.number().int().min(0)).optional().describe('Seeds to compose (default [0,1,2,3]). Each rotates per-slot picks (and palette/type where supported).'),
+      preset: z.string().optional(), palette: z.string().optional(),
+      aesthetic: z.string().optional(), density: z.string().optional(),
+      motion: z.string().optional(), fontPair: z.string().optional()
+    },
+    outputSchema: { winner: z.any(), ranked: z.array(z.any()), html: z.string() },
+    annotations: RO
+  }, guard(async (args) => {
+    const { genre, platform, seeds, ...overrides } = args;
+    const body = { genre, platform, seeds: seeds && seeds.length ? seeds : [0, 1, 2, 3], overrides };
+    const r = await api('POST', '/api/variants', body);
+    const variants = (r.variants || []).map((v) => ({
+      seed: v.seed,
+      score: v.coherence?.score ?? 0,
+      tells: v.coherence?.authenticity?.tells || [],
+      theme: `pal-${v.theme?.palette} · ${v.theme?.aesthetic} · ${v.theme?.fontPair}`,
+      bytes: Buffer.byteLength(v.html || ''),
+      html: v.html || ''
+    }));
+    variants.sort((a, b) => b.score - a.score);
+    const winner = variants[0];
+    const table = [
+      '| rank | seed | score | theme | bytes | tells |',
+      '|---|---|---|---|---|---|',
+      ...variants.map((v, i) => `| ${i === 0 ? '🏆' : i + 1} | ${v.seed} | ${v.score} | ${v.theme} | ${v.bytes} | ${v.tells.join(',') || '—'} |`)
+    ].join('\n');
+    const text = [
+      `# ${variants.length} variants of ${genre} — winner: seed ${winner ? winner.seed : '?'} (score ${winner ? winner.score : '?'})`,
+      table,
+      '',
+      'Only the winner HTML is returned (losers show bytes). `book_compose({genre, seed})` re-pulls any loser.',
+      '',
+      fenceHtml(winner ? winner.html : '')
+    ].join('\n');
+    return {
+      content: [{ type: 'text', text }],
+      structuredContent: {
+        winner: winner ? { seed: winner.seed, score: winner.score, theme: winner.theme } : null,
+        ranked: variants.map(({ html, ...rest }) => rest),
+        html: winner ? winner.html : ''
+      }
     };
   }));
 
@@ -272,7 +459,7 @@ async function main() {
       slug: z.string().optional().describe('Saved page slug to inspect (provide slug OR html).'),
       html: z.string().optional().describe('Raw HTML to inspect (provide slug OR html).'),
       viewports: z.array(z.string()).optional().describe('Named viewports: iphone-se, iphone-15, iphone-15-max, ipad, ipad-landscape, laptop, desktop, desktop-xl.'),
-      mode: z.enum(['layout', 'perf', 'diagnose', 'element', 'mobile']).optional().describe('layout = fit facts (default) · perf = lag diagnostics (lagScore, reflow/recalc cost, census) · diagnose = full common-issues audit (console errors, 404s, contrast, a11y, undefined vars) · element = point DevTools for one selector (box, computed, parents, overlaps) · mobile = HIG facts for a composed app flow (per-screen safe-area respect, thumb-reach of primary actions, tap targets ≥44pt, native nav conventions). Use mobile mode on compose({platform:"mobile"}) output.'),
+      mode: z.enum(['layout', 'perf', 'diagnose', 'element', 'mobile', 'taste']).optional().describe('layout = fit facts (default) · perf = lag diagnostics (lagScore, reflow/recalc cost, census) · diagnose = full common-issues audit incl. RENDER-TRUTH (console errors, 404s, contrast, a11y, undefined vars, invisible/collapsed content) · element = point DevTools for one selector (box, computed, parents, overlaps) · mobile = HIG facts for a composed app flow (safe-area, thumb-reach, ≥44pt taps, nav conventions) · taste = "does it look good" as FACTS not a screenshot (type-scale ratio, rhythm, gradient↔imagery balance, tasteScore + DOM-shape slop tells like gradients-without-imagery / default-font / weak-hierarchy).'),
       selector: z.string().optional().describe('CSS selector — required for mode "element".'),
       screenshot: z.boolean().optional().describe('Also capture PNGs to book/shots/ (opt-in; facts are the default).')
     },
@@ -417,19 +604,9 @@ async function main() {
   // autofix gate, enforced where the model can't talk past it; plus the
   // fact-fingerprint loop detector nothing with prose logs can build.
   const gateMemory = new Map(); // gateKey(slug|title) -> [fingerprint, fingerprint…]
-  function gateFindings(coh, diag) {
-    const violations = [];
-    if ((coh?.score ?? 100) < 70) violations.push(`coherence:${coh.score}`);
-    const errs = (diag?.console || []).filter((c) => c.level === 'error');
-    if (errs.length) violations.push(`console-errors:${errs.length}`);
-    if ((diag?.resources || []).length) violations.push(`failed-resources:${diag.resources.length}`);
-    if (diag?.layout?.hOverflow) violations.push('hOverflow@iphone-15');
-    if ((diag?.css?.undefinedVars || []).length) violations.push(`undefined-vars:${diag.css.undefinedVars.join(',')}`);
-    return violations;
-  }
   server.registerTool('book_save_page', {
     title: 'Save a page to the book',
-    description: 'Save HTML as a page (slug auto-derived from title if omitted; revisions archived server-side). Pass briefId to auto-complete the brief you claimed — the one-call finish for the brief workflow. SAVE-GATE: the save is validated deterministically first (coherence ≥ 70, zero console errors / failed resources, no phone overflow, no undefined CSS vars) and REJECTED with the exact findings if it fails — fix them and retry. If the same findings persist twice, you will be told to change approach or pass force:true and report the violations honestly.',
+    description: 'Save HTML as a page (slug auto-derived from title if omitted; revisions archived server-side). Pass briefId to auto-complete the brief you claimed, and manifest:{genre,platform} so the gate picks the right lens. SAVE-GATE (deterministic, rejected with exact one-step `check → fix` findings): WEB pages are checked for coherence ≥ 70, zero console errors / failed resources, no phone overflow, no undefined CSS vars, no invisible/collapsed content, and the imagery floor on visual-first genres. MOBILE app flows (auto-detected) are instead checked by the HIG lab — safe-area respect, thumb-reach, tap targets, native nav. If the same findings persist twice you will be told to change approach or pass force:true and disclose the violations honestly.',
     inputSchema: {
       slug: z.string().optional().describe('Page slug; derived from title when omitted.'),
       title: z.string().describe('Human page title.'),
@@ -438,34 +615,43 @@ async function main() {
       briefId: z.string().optional().describe('Brief to auto-complete (status→done, pageSlug→this page).'),
       force: z.boolean().optional().describe('Bypass the save-gate (only after a detected loop, and disclose the violations in your summary).')
     },
-    outputSchema: { manifest: z.any().optional(), brief: z.any().optional(), briefError: z.string().optional(), rejected: z.boolean().optional(), violations: z.array(z.string()).optional(), loopDetected: z.boolean().optional() },
+    outputSchema: { manifest: z.any().optional(), brief: z.any().optional(), briefError: z.string().optional(), rejected: z.boolean().optional(), violations: z.array(z.string()).optional(), findings: z.array(z.any()).optional(), loopDetected: z.boolean().optional() },
     annotations: RW
   }, guard(async ({ slug, title, html, manifest, briefId, force }) => {
     const gateKey = slug || title;
     if (!force) {
-      const [coh, diagOut] = await Promise.all([
-        api('POST', '/api/coherence', { html }),
-        api('POST', '/api/inspect', { html, mode: 'diagnose', viewports: ['iphone-15'] }),
-      ]);
-      const diag = (diagOut.reports || [])[0] || {};
-      const violations = gateFindings(coh, diag);
-      if (violations.length) {
+      // mobile app flows are gated by the HIG lab; web pages by the diagnose lab
+      const isMobile = manifest?.platform === 'mobile' || /class="[^"]*\bapp-flow\b|\bscr-frame\b/.test(html);
+      let findings;
+      if (isMobile) {
+        const [coh, mobOut] = await Promise.all([
+          api('POST', '/api/coherence', { html }),
+          api('POST', '/api/inspect', { html, mode: 'mobile' }),
+        ]);
+        findings = gateFindingsMobile(coh, (mobOut.reports || [])[0] || {});
+      } else {
+        const [coh, diagOut] = await Promise.all([
+          api('POST', '/api/coherence', { html }),
+          api('POST', '/api/inspect', { html, mode: 'diagnose', viewports: ['iphone-15'] }),
+        ]);
+        findings = gateFindings(coh, (diagOut.reports || [])[0] || {}, { genre: manifest?.genre, html });
+      }
+      if (findings.length) {
+        const violations = findings.map((f) => f.code); // stable codes for fingerprint + structuredContent
         const history = gateMemory.get(gateKey) || [];
-        const fingerprint = violations.map((v) => v.split(':')[0]).sort().join('|');
+        const fingerprint = findings.map((f) => f.check).sort().join('|');
         const loop = history.length >= 1 && history[history.length - 1] === fingerprint;
         history.push(fingerprint);
         gateMemory.set(gateKey, history);
         const detail = [
-          `# SAVE REJECTED — ${violations.length} violation${violations.length === 1 ? '' : 's'}`,
-          ...violations.map((v) => `- ${v}`),
-          coh?.warnings?.length ? '\nCoherence hints:\n' + coh.warnings.map((w) => `- ${w.type}: ${w.hint}`).join('\n') : '',
-          diag?.layout?.overflowers?.length ? '\nOverflowers (iphone-15):\n' + diag.layout.overflowers.slice(0, 5).map((o) => `- ${o.sel}`).join('\n') : '',
-          (diag?.console || []).slice(0, 5).map((c) => `- console.${c.level}: ${c.message}`).join('\n'),
+          `# SAVE REJECTED — ${findings.length} violation${findings.length === 1 ? '' : 's'}`,
+          'Each line is **check: what is wrong → the one-step fix.**',
+          ...findings.map((f) => `- **${f.check}**: ${f.cause} → ${f.fix}`),
           loop
-            ? '\n⚠ **LOOP DETECTED** — the SAME violations persisted across consecutive attempts. STOP patching this approach. Either (a) recompose from a fresh book_compose draft and re-apply only the brief\'s delta, or (b) save with force:true and disclose the unresolved violations in your brief summary.'
-            : '\nFix the findings above and call book_save_page again.'
+            ? '\n⚠ **LOOP DETECTED** — the SAME checks failed across consecutive attempts. STOP patching this approach. Either (a) recompose from a fresh book_compose draft and re-apply only the brief\'s delta, or (b) save with force:true and disclose the unresolved violations in your brief summary.'
+            : '\nApply the fixes above and call book_save_page again.'
         ].filter(Boolean).join('\n');
-        return { content: [{ type: 'text', text: detail }], structuredContent: { rejected: true, violations, loopDetected: loop } };
+        return { content: [{ type: 'text', text: detail }], structuredContent: { rejected: true, violations, findings, loopDetected: loop } };
       }
       gateMemory.delete(gateKey);
     }
