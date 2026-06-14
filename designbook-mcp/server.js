@@ -26,6 +26,21 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { pathToFileURL } from 'node:url';
+// single source of truth — the inspect lab owns these; the bridge must not drift
+import { MODES, VIEWPORTS } from '../lib/inspect.js';
+
+// The save-gate's hard coherence floor. Deliberately distinct from the vault's
+// soft 80 advisory (ok = score>=80): 70 is "reject the save", 80 is "could be
+// tighter". Kept as a named constant so the two layers never get conflated.
+export const GATE_COHERENCE_MIN = 70;
+
+// The full tool surface, single-sourced so the header/docs/tests can't drift.
+export const TOOLS = [
+  'book_overview', 'book_meta', 'book_compose', 'book_variants', 'book_coherence',
+  'book_generate_image', 'book_save_asset', 'book_autofill_imagery',
+  'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page',
+  'book_briefs', 'book_claim_brief', 'book_complete_brief',
+];
 
 const BASE = (process.env.DESIGNBOOK_URL || 'http://localhost:4747').replace(/\/+$/, '');
 
@@ -74,7 +89,7 @@ export const IMAGERY_MANDATORY = new Set(['ecommerce', 'portfolio', 'restaurant'
 // Pure (args only) so it unit-tests without booting the MCP server.
 // the authenticity-aware coherence reject, shared by the web and mobile gates
 function coherenceFinding(coh) {
-  if ((coh?.score ?? 100) >= 70) return null;
+  if ((coh?.score ?? 100) >= GATE_COHERENCE_MIN) return null;
   const slop = (coh?.authenticity?.tells || []).includes('GRADIENT-HEAVY-NO-IMAGERY');
   return { check: 'coherence', code: `coherence:${coh.score}`,
     cause: `score ${coh.score}/100 — ${slop ? 'gradient-heavy with no real imagery (the #1 AI tell)' : 'too many cohesion violations'}`,
@@ -350,7 +365,8 @@ async function main() {
       motion: z.string().optional().describe('Motion override: minimal, standard, playful.'),
       fontPair: z.string().optional().describe('Font pair override (e.g. "grotesk-tech").'),
       font_pair: z.string().optional().describe('Alias of fontPair (matches the frontendmaxxing compose convention).'),
-      seed: z.number().int().min(0).optional().describe('Variety seed — rotates per-slot/per-screen picks. 0 = house picks.')
+      seed: z.number().int().min(0).optional().describe('Variety seed — rotates per-slot/per-screen picks (and palette/type). 0 = house picks.'),
+      compact: z.boolean().optional().describe('Omit the full HTML from the text (it stays in structuredContent.html) to save tokens in the compose→inspect→save loop.')
     },
     outputSchema: {
       platform: z.string().optional(), theme: z.record(z.string()),
@@ -376,7 +392,9 @@ async function main() {
       mobile ? '**Screen manifest (real mobile/ components to wire in):**' : '**Section manifest (real snippets to wire in):**',
       ...manifest,
       '',
-      fenceHtml(r.html)
+      args.compact
+        ? `_HTML: ${Buffer.byteLength(r.html || '')} bytes in structuredContent.html (omitted here to save tokens). Pass it to book_inspect / book_save_page._`
+        : fenceHtml(r.html)
     ].filter((l) => l !== '').join('\n');
     return {
       content: [{ type: 'text', text }],
@@ -459,7 +477,7 @@ async function main() {
       slug: z.string().optional().describe('Saved page slug to inspect (provide slug OR html).'),
       html: z.string().optional().describe('Raw HTML to inspect (provide slug OR html).'),
       viewports: z.array(z.string()).optional().describe('Named viewports: iphone-se, iphone-15, iphone-15-max, ipad, ipad-landscape, laptop, desktop, desktop-xl.'),
-      mode: z.enum(['layout', 'perf', 'diagnose', 'element', 'mobile', 'taste']).optional().describe('layout = fit facts (default) · perf = lag diagnostics (lagScore, reflow/recalc cost, census) · diagnose = full common-issues audit incl. RENDER-TRUTH (console errors, 404s, contrast, a11y, undefined vars, invisible/collapsed content) · element = point DevTools for one selector (box, computed, parents, overlaps) · mobile = HIG facts for a composed app flow (safe-area, thumb-reach, ≥44pt taps, nav conventions) · taste = "does it look good" as FACTS not a screenshot (type-scale ratio, rhythm, gradient↔imagery balance, tasteScore + DOM-shape slop tells like gradients-without-imagery / default-font / weak-hierarchy).'),
+      mode: z.enum(MODES).optional().describe('layout = fit facts (default) · perf = lag diagnostics (lagScore, reflow/recalc cost, census) · diagnose = full common-issues audit incl. RENDER-TRUTH (console errors, 404s, contrast, a11y, undefined vars, invisible/collapsed content) · element = point DevTools for one selector (box, computed, parents, overlaps) · mobile = HIG facts for a composed app flow (safe-area, thumb-reach, ≥44pt taps, nav conventions) · taste = "does it look good" as FACTS not a screenshot (type-scale ratio, rhythm, gradient↔imagery balance, tasteScore + DOM-shape slop tells like gradients-without-imagery / default-font / weak-hierarchy).'),
       selector: z.string().optional().describe('CSS selector — required for mode "element".'),
       screenshot: z.boolean().optional().describe('Also capture PNGs to book/shots/ (opt-in; facts are the default).')
     },
@@ -527,6 +545,34 @@ async function main() {
     };
   }));
 
+  // ---- book_autofill_imagery (wireframe → deliverable, one call) ----
+  server.registerTool('book_autofill_imagery', {
+    title: 'Auto-fill empty media with real photos',
+    description: 'Turn a composed WIREFRAME into a real deliverable in one call: finds the empty grey media placeholders, derives an on-aesthetic photographic prompt for each (keyed on the page genre + data-aesthetic), generates real photos locally (mflux), swaps them in, and saves a new revision. Serial + bounded so it never starves foreground work. Pass dryRun:true to preview the slots + prompts WITHOUT generating (free, instant). If mflux is unavailable it returns the plan and skips cleanly. Use after book_compose to clear the imagery deficit fast; refine individual shots with book_generate_image.',
+    inputSchema: {
+      slug: z.string().describe('Saved page slug to fill.'),
+      max: z.number().int().min(1).max(6).optional().describe('Max images to generate (default 3).'),
+      dryRun: z.boolean().optional().describe('Preview the slots + prompts without generating (free).')
+    },
+    outputSchema: { slug: z.string(), filled: z.array(z.any()).optional(), plan: z.array(z.any()).optional(), remaining: z.number().optional(), skipped: z.string().optional(), dryRun: z.boolean().optional(), mfluxAvailable: z.boolean().optional() },
+    annotations: RW
+  }, guard(async ({ slug, max, dryRun }) => {
+    const r = await api('POST', '/api/autofill-imagery', { slug, max, dryRun });
+    let text;
+    if (r.dryRun) {
+      text = [`# Autofill plan for \`${r.slug}\` — ${r.plan.length} slot(s) (${r.remaining} empty total)`,
+        ...r.plan.map((p, i) => `${i + 1}. **${p.kind}** (${p.aspect}) — "${p.prompt}"`),
+        '', 'Run again without dryRun to generate + swap them in.'].join('\n');
+    } else if (r.skipped) {
+      text = `# Autofill skipped\n${r.skipped}\n\nPlan (${(r.plan || []).length} slot(s)):\n` + (r.plan || []).map((p, i) => `${i + 1}. ${p.kind} — "${p.prompt}"`).join('\n');
+    } else {
+      const ok = (r.filled || []).filter((f) => f.swapped);
+      text = [`# Filled ${ok.length}/${(r.filled || []).length} slot(s) in \`${r.slug}\` — ${r.remaining} still empty`,
+        ...(r.filled || []).map((f) => f.swapped ? `- ✓ ${f.kind} → \`${f.url}\` (${Math.round((f.ms || 0) / 1000)}s)` : `- ✗ ${f.kind}: ${f.error || 'not swapped'}`)].join('\n');
+    }
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
   // ---- book_view (the agent's eyes — returns the actual image) ----
   server.registerTool('book_view', {
     title: 'View a page (real image)',
@@ -534,7 +580,7 @@ async function main() {
     inputSchema: {
       slug: z.string().optional().describe('Saved page slug (provide slug OR html).'),
       html: z.string().optional().describe('Raw HTML (provide slug OR html).'),
-      viewport: z.enum(['iphone-se', 'iphone-15', 'iphone-15-max', 'ipad', 'ipad-landscape', 'laptop', 'desktop', 'desktop-xl']).optional().describe('Device to view at (default desktop).'),
+      viewport: z.enum(Object.keys(VIEWPORTS)).optional().describe('Device to view at (default desktop).'),
       fullPage: z.boolean().optional().describe('Capture the entire document height, not just the first screen (default true).')
     },
     outputSchema: { viewport: z.string(), width: z.number(), docHeight: z.number().optional(), screenshotPath: z.string().optional() },
@@ -583,18 +629,18 @@ async function main() {
   // ---- book_get_page ----
   server.registerTool('book_get_page', {
     title: 'Get a saved page',
-    description: 'Fetch one saved page: its manifest + full HTML. Token-heavy — prefer book_list_pages for orientation and only pull the HTML you intend to edit.',
-    inputSchema: { slug: z.string().describe('Page slug from book_list_pages.') },
+    description: 'Fetch one saved page: its manifest + full HTML. Token-heavy — prefer book_list_pages for orientation and only pull the HTML you intend to edit. compact:true returns the manifest + byte count only (HTML in structuredContent.html).',
+    inputSchema: { slug: z.string().describe('Page slug from book_list_pages.'), compact: z.boolean().optional().describe('Omit the full HTML from the text (kept in structuredContent.html) to save tokens.') },
     outputSchema: { manifest: z.any(), html: z.string() },
     annotations: RO
-  }, guard(async ({ slug }) => {
+  }, guard(async ({ slug, compact }) => {
     const r = await api('GET', '/api/pages/' + encodeURIComponent(slug));
     const m = r.manifest || {};
     const text = [
       `# ${m.title || slug} (\`${m.slug || slug}\`)`,
       'Manifest: ' + JSON.stringify(m),
       '',
-      fenceHtml(r.html || '')
+      compact ? `_HTML: ${Buffer.byteLength(r.html || '')} bytes in structuredContent.html (omitted to save tokens)._` : fenceHtml(r.html || '')
     ].join('\n');
     return { content: [{ type: 'text', text }], structuredContent: { manifest: m, html: r.html || '' } };
   }));

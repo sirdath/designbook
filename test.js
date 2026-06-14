@@ -19,7 +19,8 @@ import { loadVault, injectBase } from './lib/vault.js';
 import { VIEWPORTS, DEFAULT_VIEWPORTS, findChrome, MODES } from './lib/inspect.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
 import { autofix } from './lib/autofix.js';
-import { gateFindings, gateFindingsMobile, IMAGERY_MANDATORY } from './designbook-mcp/server.js';
+import { findImagerySlots, derivePrompt, imgTag, swapFirst, readAesthetic } from './lib/autofill.js';
+import { gateFindings, gateFindingsMobile, IMAGERY_MANDATORY, TOOLS, GATE_COHERENCE_MIN } from './designbook-mcp/server.js';
 import { runBrief } from './engines/sdk.js';
 
 const SERVER = process.env.DESIGNBOOK_URL || 'http://localhost:4747';
@@ -170,7 +171,10 @@ test('lib/handoff.js — mobile FLOW.md from a composed app', async () => {
   assert.match(md, /## Screen flow \(\d+\)/);
   assert.match(md, /## Design tokens/);
   assert.match(md, /390 × 844/);           // device geometry present
-  assert.match(md, /≥ 44 pt/);             // HIG tap-target rule present
+  assert.match(md, /44 × 44 pt/);          // iOS tap-target rule (in the iOS↔Android table)
+  assert.match(md, /iOS ↔ Android/);       // the divergence table is present
+  assert.match(md, /48 × 48 dp/);          // Material counterpart
+  assert.match(md, /tab root|pushed|modal/); // per-screen role shown
   // the resolved palette name from the composed <body> is reflected
   const pal = (out.html.match(/\bpal-([a-z0-9-]+)/) || [])[1];
   if (pal) assert.ok(md.includes('pal-' + pal), 'handoff names the composed palette');
@@ -218,6 +222,32 @@ test('autofix — injects reveal observer + repairs missing alt, idempotently', 
   assert.ok(b.fixed.some((f) => /alt/.test(f)));
   // an img that already has alt is left alone
   assert.equal(autofix('<body><img src="x" alt="real"></body>').fixed.some((f) => /alt/.test(f)), false);
+});
+
+// ------------------------------------------------------------- lib/autofill.js
+
+test('autofill — finds empty media slots, derives prompts, swaps idempotently', () => {
+  const html = '<body data-aesthetic="luxury"><div class="s-reveal" style="aspect-ratio:16/10;background:var(--surface);border-radius:var(--radius);"></div><div class="s-reveal" style="aspect-ratio:1/1;background:var(--surface);"></div><div class="s-reveal" style="padding:2rem"><h2>not media</h2></div></body>';
+  assert.equal(readAesthetic(html), 'luxury');
+  const slots = findImagerySlots(html);
+  assert.equal(slots.length, 2, 'only the two empty media boxes (the content .s-reveal is skipped)');
+  assert.equal(slots[0].kind, 'hero');
+  assert.equal(slots[0].aspect, '16/10');
+
+  const p = derivePrompt(slots[0], { genre: 'restaurant', aesthetic: 'luxury' });
+  assert.match(p, /food/, 'restaurant subject');
+  assert.match(p, /low-key/, 'luxury look');
+  assert.match(p, /no text|no watermark/, 'guards against text/watermark');
+
+  // two byte-identical placeholders → sequential swaps hit distinct ones
+  const a = swapFirst(html, slots[0].full, imgTag(slots[0], '/book/a.png', 'hero', 1280, 800));
+  assert.ok(a.swapped && /<img[^>]+a\.png/.test(a.html));
+  assert.equal(findImagerySlots(a.html).length, 1, 'one slot left after first swap');
+
+  // mobile .scr-media must keep its real inline aspect-ratio (not hardcode 4/3)
+  const mob = findImagerySlots('<div class="scr-media" style="aspect-ratio:1/1;border-radius:50%;"></div><div class="scr-media"></div>');
+  assert.equal(mob[0].aspect, '1/1', 'parses the inline aspect-ratio');
+  assert.equal(mob[1].aspect, '4/3', 'falls back to 4/3 when none given');
 });
 
 // ------------------------------------------------------------- save-gate (designbook-mcp)
@@ -270,6 +300,33 @@ test('gateFindingsMobile — HIG lens, never web-overflow', () => {
 
   // never blocks on a missing/error mobile report (don't fail a save we cannot assess)
   assert.deepEqual(gateFindingsMobile(okCoh, { error: 'no .scr-frame' }), []);
+});
+
+// ------------------------------------------------------------- invariants (E1)
+
+test('tool surface + gate constants are single-sourced and stable', () => {
+  assert.equal(TOOLS.length, 16, 'all 16 tools enumerated');
+  for (const t of ['book_overview', 'book_compose', 'book_variants', 'book_autofill_imagery', 'book_inspect', 'book_save_page']) {
+    assert.ok(TOOLS.includes(t), `${t} in the manifest`);
+  }
+  assert.equal(GATE_COHERENCE_MIN, 70, 'gate floor is 70 (distinct from the vault soft 80)');
+});
+
+test('web compose stamps a unique data-db-ref per section (provenance invariant)', async () => {
+  const vault = await loadVault();
+  const out = vault.compose({ genre: 'saas', seed: 0 });
+  const refs = (out.html.match(/data-db-ref="(s\d+-[^"]+)"/g) || []);
+  assert.ok(refs.length >= 3, `expected several stamped sections, got ${refs.length}`);
+  assert.equal(new Set(refs).size, refs.length, 'every data-db-ref is unique');
+});
+
+test('every web genre composes to a renderable page (no throw, has body + reveal)', async () => {
+  const vault = await loadVault();
+  for (const genre of vault.genres) {
+    const out = vault.compose({ genre, seed: 0 });
+    assert.match(out.html, /<body[^>]*class="struct/, `${genre} has a .struct body`);
+    assert.match(out.html, /IntersectionObserver/, `${genre} ships the reveal script (no blank page)`);
+  }
 });
 
 // ------------------------------------------------------------- engines/sdk.js

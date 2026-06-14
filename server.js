@@ -19,6 +19,7 @@ import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
 import { autofix } from './lib/autofix.js';
+import { findImagerySlots, derivePrompt, aspectToSize, imgTag, swapFirst, readAesthetic } from './lib/autofill.js';
 import { generateImage, findMflux } from './lib/imagegen.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -78,10 +79,11 @@ async function main() {
 
   // ---- SSE ----
   const sseClients = new Set();
-  book.onChange((evt) => {
+  const broadcast = (evt) => {
     const line = `data: ${JSON.stringify(evt)}\n\n`;
     for (const res of sseClients) { try { res.write(line); } catch { sseClients.delete(res); } }
-  });
+  };
+  book.onChange(broadcast);
 
   function composeWithScore(body) {
     const opts = {
@@ -393,6 +395,46 @@ async function main() {
       if (path === '/api/generate-image' && method === 'GET') {
         return send(res, 200, { available: !!findMflux(), engine: 'mflux z-image-turbo (local, Apple MLX)' });
       }
+      // autofill-imagery — one call: find empty media slots, generate on-aesthetic
+      // photos locally, swap them in, save a new revision. dryRun previews the
+      // plan (slots + prompts) without touching mflux. Bounded + serial so it
+      // never starves the owner's foreground work.
+      if (path === '/api/autofill-imagery' && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.slug) return err(res, 400, 'slug required');
+        const page = book.getPage(slugify(body.slug));
+        if (!page) return err(res, 404, 'no page: ' + body.slug);
+        const slug = page.manifest.slug;
+        const genre = page.manifest.genre || '';
+        const aesthetic = readAesthetic(page.html) || page.manifest.aesthetic || '';
+        const max = Math.max(1, Math.min(6, body.max || 3));
+        const slots = findImagerySlots(page.html).slice(0, max);
+        const plan = slots.map((s) => ({ kind: s.kind, platform: s.platform, aspect: s.aspect, prompt: derivePrompt(s, { genre, aesthetic }) }));
+        if (!slots.length) return send(res, 200, { slug, filled: [], plan: [], remaining: 0, note: 'no empty media placeholders found' });
+        if (body.dryRun) return send(res, 200, { slug, dryRun: true, plan, remaining: findImagerySlots(page.html).length });
+        if (!findMflux()) return send(res, 200, { slug, filled: [], plan, skipped: 'mflux unavailable — install it (frontendmaxxing/local-image-gen.skill.md) or fill imagery by hand', mfluxAvailable: false });
+        let html = page.html;
+        const filled = [];
+        for (let i = 0; i < slots.length; i++) {
+          const s = slots[i];
+          const prompt = plan[i].prompt;
+          const { width, height } = aspectToSize(s.aspect, s.kind === 'hero' ? 1280 : 1024);
+          broadcast({ type: 'autofill', slug, i: i + 1, of: slots.length, status: 'generating', kind: s.kind });
+          const r = await generateImage({ prompt, width, height });
+          if (r.error) { filled.push({ kind: s.kind, error: r.error }); continue; }
+          const name = `autofill-${s.kind}-${i + 1}-${r.seed}.png`;
+          let asset;
+          try { asset = book.saveAsset(slug, name, r.png.toString('base64'), { base64: true }); }
+          catch (e) { filled.push({ kind: s.kind, error: e.message }); continue; }
+          const swap = swapFirst(html, s.full, imgTag(s, asset.url, `${genre || 'brand'} ${s.kind}`, r.width, r.height));
+          html = swap.html;
+          filled.push({ kind: s.kind, url: asset.url, prompt, ms: r.ms, swapped: swap.swapped });
+        }
+        if (filled.some((f) => f.swapped)) {
+          book.savePage({ slug, title: page.manifest.title, html, manifest: page.manifest });
+        }
+        return send(res, 200, { slug, filled, remaining: findImagerySlots(html).length, mfluxAvailable: true });
+      }
 
       // viewport lab
       if (path === '/api/inspect' && method === 'POST') {
@@ -422,12 +464,14 @@ async function main() {
           label: label ? slugify(label) : undefined,
         });
         if (out.error) return err(res, 500, out.error);
-        if (autoRoutedMobile) out.autoRoutedMobile = true;
-        // shots are served under /book/shots/
-        for (const r of out.reports || []) {
+        // never mutate `out` — inspect() returns the cached object by reference, so
+        // stamping fields on it would leak across requests. Build a fresh payload.
+        const payload = autoRoutedMobile ? { ...out, autoRoutedMobile: true } : out;
+        // screenshot results are never cached, so stamping their URLs is safe
+        for (const r of payload.reports || []) {
           if (r.screenshotPath) r.screenshotUrl = '/book/shots/' + r.screenshotPath.split('/').pop();
         }
-        return send(res, 200, out);
+        return send(res, 200, payload);
       }
 
       // SSE
