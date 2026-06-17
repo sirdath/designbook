@@ -38,7 +38,7 @@ export const GATE_COHERENCE_MIN = 70;
 export const TOOLS = [
   'book_overview', 'book_meta', 'book_compose', 'book_variants', 'book_coherence',
   'book_generate_image', 'book_save_asset', 'book_autofill_imagery',
-  'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page',
+  'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page', 'book_export_pptx',
   'book_briefs', 'book_claim_brief', 'book_complete_brief',
 ];
 
@@ -467,6 +467,21 @@ async function main() {
       ...(r.warnings || []).map((w) => `- **${w.type}** ×${w.count} — ${w.hint}${w.sample ? ` (e.g. ${JSON.stringify(w.sample.slice(0, 2))})` : ''}`)
     ].join('\n');
     return { content: [{ type: 'text', text }], structuredContent: { score: r.score, ok: r.ok, counts: r.counts || {}, warnings: r.warnings || [] } };
+  }));
+
+  // ---- book_export_pptx ----
+  server.registerTool('book_export_pptx', {
+    title: 'Export deck → editable .pptx',
+    description: 'Export a composed DECK-genre page (slug or html) to a fully-editable PowerPoint .pptx — every slide becomes native text boxes / shapes, never a flattened image. Structurally faithful, NOT pixel-identical (CSS gradients/web-fonts have no .pptx equivalent). Round-trips the saved file to self-verify it opens (slide/shape/notes census). Needs the python-pptx sidecar (`npm run setup:pptx`); returns {skipped} with an install hint if absent.',
+    inputSchema: { slug: z.string().optional().describe('Saved deck page slug.'), html: z.string().optional().describe('Raw deck HTML (provide slug OR html).') },
+    outputSchema: { ok: z.boolean(), out: z.string().optional(), census: z.any().optional(), skipped: z.boolean().optional(), reason: z.string().optional(), error: z.string().optional() },
+    annotations: RO
+  }, guard(async ({ slug, html }) => {
+    const r = await api('POST', '/api/export-pptx', { slug, html });
+    const text = r.ok
+      ? `# Exported .pptx ✓\n- file: \`${r.out}\`\n- opens: ${r.census.opens} · slides: ${r.census.slides} · shapes: ${r.census.shapes} · notes: ${r.census.withNotes}\n\n_Structurally faithful (editable shapes), not pixel-identical._`
+      : r.skipped ? `# Skipped — ${r.reason}` : `# Export failed — ${r.error}`;
+    return { content: [{ type: 'text', text }], structuredContent: r };
   }));
 
   // ---- book_inspect ----

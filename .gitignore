@@ -12,3 +12,6 @@ book/
 Thumbs.db
 .env
 *.local
+
+# python-pptx sidecar venv (created by npm run setup:pptx)
+.pptx-venv/

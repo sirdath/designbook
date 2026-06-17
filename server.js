@@ -18,6 +18,8 @@ import { inspect, VIEWPORTS, DEFAULT_VIEWPORTS } from './lib/inspect.js';
 import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
+import { exportPptx } from './lib/pptx.js';
+import { tmpdir } from 'node:os';
 import { autofix } from './lib/autofix.js';
 import { findImagerySlots, derivePrompt, aspectToSize, imgTag, swapFirst, readAesthetic } from './lib/autofill.js';
 import { generateImage, findMflux } from './lib/imagegen.js';
@@ -96,6 +98,12 @@ async function main() {
       const { html, fixed } = autofix(r.html);
       const c = vault.coherence(html);
       return { platform: 'mobile', html, theme: r.theme, screens: r.screens, warnings: r.warnings, autofixed: fixed, coherence: { score: c.score, counts: c.counts, authenticity: c.authenticity } };
+    }
+    if (body.platform === 'deck') {
+      const r = vault.composeDeck(opts);
+      const { html, fixed } = autofix(r.html);
+      const c = vault.coherence(html);
+      return { platform: 'deck', html, theme: r.theme, slides: r.slides, warnings: r.warnings, autofixed: fixed, coherence: { score: c.score, counts: c.counts, authenticity: c.authenticity } };
     }
     const r = vault.compose(opts);
     // self-heal at source so the agent never inherits a blank/inaccessible draft
@@ -323,6 +331,23 @@ async function main() {
           'Content-Length': zip.length,
         });
         return res.end(zip);
+      }
+
+      // deck → editable .pptx (python-pptx sidecar). Degrades to {skipped} when the
+      // venv is absent — never 500s on a missing optional dep.
+      if (path === '/api/export-pptx' && method === 'POST') {
+        const body = await readBody(req);
+        let html = body.html;
+        const name = slugify(body.slug || body.name || 'deck');
+        if (!html && body.slug) {
+          const page = book.getPage(slugify(body.slug));
+          if (!page) return err(res, 404, 'no page: ' + body.slug);
+          html = page.html;
+        }
+        if (!html) return err(res, 400, 'html or slug required');
+        const out = join(tmpdir(), name + '.pptx');
+        const r = exportPptx(String(html).replace(/<base[^>]*>\s*/gi, ''), out);
+        return send(res, (r.ok || r.skipped) ? 200 : 500, r);
       }
 
       // single-file export: inline every vault-relative <link>/<script> so the
