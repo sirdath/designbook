@@ -19,6 +19,7 @@ import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
 import { exportPptx } from './lib/pptx.js';
+import { checkLottie } from './lib/lottie.js';
 import { tmpdir } from 'node:os';
 import { autofix } from './lib/autofix.js';
 import { findImagerySlots, derivePrompt, aspectToSize, imgTag, swapFirst, readAesthetic } from './lib/autofill.js';
@@ -348,6 +349,12 @@ async function main() {
         const out = join(tmpdir(), name + '.pptx');
         const r = exportPptx(String(html).replace(/<base[^>]*>\s*/gi, ''), out);
         return send(res, (r.ok || r.skipped) ? 200 : 500, r);
+      }
+
+      // validate + preview Lottie JSON (render-truth for animations)
+      if (path === '/api/lottie-check' && method === 'POST') {
+        const body = await readBody(req);
+        return send(res, 200, checkLottie(body));
       }
 
       // single-file export: inline every vault-relative <link>/<script> so the

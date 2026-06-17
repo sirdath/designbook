@@ -38,7 +38,7 @@ export const GATE_COHERENCE_MIN = 70;
 export const TOOLS = [
   'book_overview', 'book_meta', 'book_compose', 'book_variants', 'book_coherence',
   'book_generate_image', 'book_save_asset', 'book_autofill_imagery',
-  'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page', 'book_export_pptx',
+  'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page', 'book_export_pptx', 'book_lottie',
   'book_briefs', 'book_claim_brief', 'book_complete_brief',
 ];
 
@@ -481,6 +481,27 @@ async function main() {
     const text = r.ok
       ? `# Exported .pptx ✓\n- file: \`${r.out}\`\n- opens: ${r.census.opens} · slides: ${r.census.slides} · shapes: ${r.census.shapes} · notes: ${r.census.withNotes}\n\n_Structurally faithful (editable shapes), not pixel-identical._`
       : r.skipped ? `# Skipped — ${r.reason}` : `# Export failed — ${r.error}`;
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
+  // ---- book_lottie ----
+  server.registerTool('book_lottie', {
+    title: 'Validate + preview Lottie',
+    description: 'Render Lottie JSON headless and return a hard verdict per file — OK (draws AND animates) / STATIC / BLANK / INVALID — plus a preview PNG. Catches LLM-authored Lottie that parses but renders nothing (opacity/size keyframes stuck at 0) — the silent-failure case. The same JSON it greenlights plays in lottie-web AND Flutter\'s `lottie` package. Pass paths:[…] (existing .json files) and/or json+name (inline). Needs the vault\'s tools/lottie-check.mjs + playwright-core; returns {skipped} if absent.',
+    inputSchema: {
+      paths: z.array(z.string()).optional().describe('Lottie .json file paths to validate (absolute or vault-relative).'),
+      json: z.string().optional().describe('Inline Lottie JSON string (provide paths and/or json).'),
+      name: z.string().optional().describe('Name for the inline json preview tile.'),
+    },
+    outputSchema: { ok: z.boolean(), preview: z.string().optional(), results: z.array(z.any()).optional(), skipped: z.boolean().optional(), reason: z.string().optional(), error: z.string().optional() },
+    annotations: RO
+  }, guard(async ({ paths, json, name }) => {
+    const r = await api('POST', '/api/lottie-check', { paths, json, name });
+    if (!r.ok) return { content: [{ type: 'text', text: r.skipped ? `# Lottie check skipped — ${r.reason}` : `# Lottie check error — ${r.error}` }], structuredContent: r };
+    const res = r.results || [];
+    const ok = res.filter((x) => x.verdict === 'OK').length;
+    const rows = res.map((x) => `- ${x.verdict === 'OK' ? '✓' : '✗'} **${x.name}** — ${x.verdict}${x.verdict === 'OK' ? ` · ${x.layers}L ${x.frames}` : x.verdict === 'INVALID' ? ` (${x.why})` : ''}`);
+    const text = [`# Lottie check — ${ok}/${res.length} OK`, ...rows, '', `preview → \`${r.preview}\``].join('\n');
     return { content: [{ type: 'text', text }], structuredContent: r };
   }));
 
