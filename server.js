@@ -121,7 +121,7 @@ async function main() {
     try {
       // ===== API =====
       if (path === '/api/health') {
-        return send(res, 200, { ok: true, vault: vault.root, snippets: vault.entries.length, palettes: vault.palettes.length, presets: vault.presets.presets.length });
+        return send(res, 200, { ok: true, vault: vault.root, snippets: vault.entries.length, palettes: vault.palettes.length, presets: vault.presets.presets.length, hasKey: !!process.env.ANTHROPIC_API_KEY, baseUrl: process.env.ANTHROPIC_BASE_URL || null });
       }
       if (path === '/api/meta') {
         return send(res, 200, {

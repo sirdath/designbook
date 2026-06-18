@@ -15,3 +15,7 @@ Thumbs.db
 
 # python-pptx sidecar venv (created by npm run setup:pptx)
 .pptx-venv/
+
+# desktop app: built bundle (regenerate via app/make-app.sh) + its server log
+Design Book.app/
+.app-server.log
