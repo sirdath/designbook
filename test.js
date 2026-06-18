@@ -305,8 +305,8 @@ test('gateFindingsMobile — HIG lens, never web-overflow', () => {
 // ------------------------------------------------------------- invariants (E1)
 
 test('tool surface + gate constants are single-sourced and stable', () => {
-  assert.equal(TOOLS.length, 16, 'all 16 tools enumerated');
-  for (const t of ['book_overview', 'book_compose', 'book_variants', 'book_autofill_imagery', 'book_inspect', 'book_save_page']) {
+  assert.equal(TOOLS.length, 18, 'all 18 tools enumerated');
+  for (const t of ['book_overview', 'book_compose', 'book_variants', 'book_autofill_imagery', 'book_inspect', 'book_save_page', 'book_export_pptx', 'book_lottie']) {
     assert.ok(TOOLS.includes(t), `${t} in the manifest`);
   }
   assert.equal(GATE_COHERENCE_MIN, 70, 'gate floor is 70 (distinct from the vault soft 80)');
