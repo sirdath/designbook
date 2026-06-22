@@ -122,6 +122,12 @@ export function gateFindings(coh, diag, ctx) {
       cause: `${diag.render.invisibleContent.length} element(s) occupy space but render invisible${iv ? ` — e.g. ${iv.sel} (${iv.cause})` : ''}. A human sees a blank/broken page.`,
       fix: iv && /reveal/.test(iv.cause) ? 'the reveal script never ran — ensure the IntersectionObserver script is present, or remove .s-reveal' : 'an element is opacity:0 / visibility:hidden — make it visible or remove it' });
   }
+  if ((diag?.layout?.occluded || []).length) {
+    const oc = diag.layout.occluded[0];
+    f.push({ check: 'occlusion', code: `occlusion:${diag.layout.occluded.length}`,
+      cause: `${diag.layout.occluded.length} control(s) covered by an unrelated element — a human can't click them${oc ? ` — e.g. ${oc.sel}${oc.sample ? ` "${oc.sample}"` : ''} sits under ${oc.by}` : ''}`,
+      fix: 'a decorative hero/scrim or an ::after band sits over the control — give the control position+z-index above it, or pointer-events:none on the decoration' });
+  }
   // imagery craft-floor — visual-first genres must carry real imagery
   const genre = String(ctx?.genre || '').toLowerCase();
   if (IMAGERY_MANDATORY.has(genre) && coh?.authenticity?.imageCount === 0) {
@@ -220,6 +226,10 @@ function renderDiagnoseReport(r) {
   if ((r.reducedMotion?.infiniteUnderReduce || []).length) {
     const rm = r.reducedMotion.infiniteUnderReduce;
     out.push(`- ⚠ reduced-motion: ${rm.length} infinite animation(s) keep running under \`prefers-reduced-motion: reduce\` (no guard) — e.g. \`${rm[0].sel}\` (${rm[0].animation}, ${rm[0].duration}). Disable them under reduce: \`@media (prefers-reduced-motion: reduce){ … animation: none }\`.`);
+  }
+  if ((r.layout?.occluded || []).length) {
+    const oc = r.layout.occluded[0];
+    out.push(`- ✗ occlusion: ${r.layout.occluded.length} control(s) covered by an unrelated element (unclickable) — e.g. \`${oc.sel}\` under \`${oc.by}\`. Raise the control's z-index or set \`pointer-events:none\` on the decoration.`);
   }
   if ((r.css?.undefinedVars || []).length) out.push(`- ⚠ undefined CSS vars: ${r.css.undefinedVars.join(', ')}`);
   if (out.length === 1) out.push('✓ clean — no console errors, no invisible/collapsed content, no overflow, a11y OK');
