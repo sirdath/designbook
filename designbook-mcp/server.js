@@ -217,6 +217,10 @@ function renderDiagnoseReport(r) {
   if (r.layout?.hOverflow) out.push('- ✗ horizontal overflow on this viewport');
   (r.a11y?.contrastFails || []).slice(0, 4).forEach((x) => out.push(`- ⚠ contrast ${x.ratio} < ${x.required}: \`${x.sel}\`${x.sample ? ` "${x.sample}"` : ''}`));
   if ((r.a11y?.missingAlt || []).length) out.push(`- ⚠ ${r.a11y.missingAlt.length} image(s) missing alt`);
+  if ((r.reducedMotion?.infiniteUnderReduce || []).length) {
+    const rm = r.reducedMotion.infiniteUnderReduce;
+    out.push(`- ⚠ reduced-motion: ${rm.length} infinite animation(s) keep running under \`prefers-reduced-motion: reduce\` (no guard) — e.g. \`${rm[0].sel}\` (${rm[0].animation}, ${rm[0].duration}). Disable them under reduce: \`@media (prefers-reduced-motion: reduce){ … animation: none }\`.`);
+  }
   if ((r.css?.undefinedVars || []).length) out.push(`- ⚠ undefined CSS vars: ${r.css.undefinedVars.join(', ')}`);
   if (out.length === 1) out.push('✓ clean — no console errors, no invisible/collapsed content, no overflow, a11y OK');
   return out.join('\n');
