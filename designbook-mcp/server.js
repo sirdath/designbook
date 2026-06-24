@@ -236,6 +236,7 @@ function renderDiagnoseReport(r) {
   if ((r.a11y?.invalidRoles || []).length) out.push(`- ⚠ ${r.a11y.invalidRoles.length} invalid ARIA role(s) (ignored by assistive tech) — e.g. \`${r.a11y.invalidRoles[0].sel}\` role="${r.a11y.invalidRoles[0].role}"`);
   if ((r.a11y?.badAriaAttrs || []).length) out.push(`- ⚠ ${r.a11y.badAriaAttrs.length} unknown aria-* attribute(s) (typo — silently does nothing) — e.g. \`${r.a11y.badAriaAttrs[0].attr}\` on \`${r.a11y.badAriaAttrs[0].sel}\``);
   if ((r.a11y?.positiveTabindex || []).length) out.push(`- ⚠ ${r.a11y.positiveTabindex.length} element(s) with \`tabindex>0\` (scrambles tab order) — e.g. \`${r.a11y.positiveTabindex[0].sel}\` =${r.a11y.positiveTabindex[0].tabindex}; use tabindex=0 or DOM order`);
+  if (r.typography?.defaultFont) out.push(`- ⚠ \`${r.typography.defaultFont}\` is the only custom typeface (the default-font tell) — pair a distinctive display face with a workhorse text face`);
   if ((r.reducedMotion?.infiniteUnderReduce || []).length) {
     const rm = r.reducedMotion.infiniteUnderReduce;
     out.push(`- ⚠ reduced-motion: ${rm.length} infinite animation(s) keep running under \`prefers-reduced-motion: reduce\` (no guard) — e.g. \`${rm[0].sel}\` (${rm[0].animation}, ${rm[0].duration}). Disable them under reduce: \`@media (prefers-reduced-motion: reduce){ … animation: none }\`.`);
