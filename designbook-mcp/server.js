@@ -237,6 +237,10 @@ function renderDiagnoseReport(r) {
   if ((r.a11y?.badAriaAttrs || []).length) out.push(`- ⚠ ${r.a11y.badAriaAttrs.length} unknown aria-* attribute(s) (typo — silently does nothing) — e.g. \`${r.a11y.badAriaAttrs[0].attr}\` on \`${r.a11y.badAriaAttrs[0].sel}\``);
   if ((r.a11y?.positiveTabindex || []).length) out.push(`- ⚠ ${r.a11y.positiveTabindex.length} element(s) with \`tabindex>0\` (scrambles tab order) — e.g. \`${r.a11y.positiveTabindex[0].sel}\` =${r.a11y.positiveTabindex[0].tabindex}; use tabindex=0 or DOM order`);
   if (r.typography?.defaultFont) out.push(`- ⚠ \`${r.typography.defaultFont}\` is the only custom typeface (the default-font tell) — pair a distinctive display face with a workhorse text face`);
+  if ((r.images?.missingDims || []).length) out.push(`- ⚠ ${r.images.missingDims.length} image(s) without width/height — these shift layout as they load (CLS). Set explicit dims or aspect-ratio`);
+  if (r.images?.lcpNotPreloaded) out.push(`- ⚠ the hero/LCP image (\`${r.images.lcpNotPreloaded.sel}\`) isn't prioritized — add fetchpriority="high" (or <link rel=preload as=image>) to cut LCP`);
+  if ((r.images?.belowFoldEager || []).length) out.push(`- ⚠ ${r.images.belowFoldEager.length} below-the-fold image(s) not lazy — add loading="lazy" so they don't compete with the LCP`);
+  if ((r.images?.oversized || []).length) out.push(`- ⚠ ${r.images.oversized.length} oversized image(s) (served far larger than shown) — e.g. \`${r.images.oversized[0].sel}\` ${r.images.oversized[0].natural}→${r.images.oversized[0].displayed}; resize or use srcset`);
   if ((r.reducedMotion?.infiniteUnderReduce || []).length) {
     const rm = r.reducedMotion.infiniteUnderReduce;
     out.push(`- ⚠ reduced-motion: ${rm.length} infinite animation(s) keep running under \`prefers-reduced-motion: reduce\` (no guard) — e.g. \`${rm[0].sel}\` (${rm[0].animation}, ${rm[0].duration}). Disable them under reduce: \`@media (prefers-reduced-motion: reduce){ … animation: none }\`.`);
