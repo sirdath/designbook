@@ -135,6 +135,16 @@ export function gateFindings(coh, diag, ctx) {
       cause: `a ${genre} page with 0 images reads as an AI wireframe (the differentiator is real imagery)`,
       fix: 'book_generate_image for the hero/products → book_save_asset → reference them; or Illustrations.mount() for vector scenes' });
   }
+  // anti-slop — reject the AI-generated / template tells (web-excellence kill-list).
+  // HIGH-severity only blocks; soft tells (superlative copy) just lower the score.
+  for (const s of (coh?.antiSlop?.findings || [])) {
+    if (s.severity !== 'high') continue;
+    f.push({ check: s.check, code: s.check, cause: s.message,
+      fix: s.check === 'ai-default-gradient' ? 'replace the indigo/purple→blue gradient with ONE brand hero hue (OKLCH) + a grain overlay'
+        : s.check === 'ai-default-tailwind' ? 'bind colors to brand tokens, not Tailwind indigo/purple defaults'
+        : s.check === 'lorem-ipsum' ? 'ship real, specific copy — no placeholder text'
+        : 'see web-excellence.skill.md' });
+  }
   return f;
 }
 
