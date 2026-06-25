@@ -47,8 +47,12 @@ export async function runBrief(brief, ctx) {
 
   // No key → no engine. Checked before the import so the user gets the
   // accurate failure mode whether or not the optional dep is installed.
-  if (!process.env.ANTHROPIC_API_KEY) {
-    const error = 'ANTHROPIC_API_KEY not set';
+  // Auth: prefer the subscription OAuth token (claude setup-token → runs on the
+  // Max plan's Agent-SDK credit, NOT metered) over a metered API key. The SDK
+  // reads whichever is in env; we just verify one is present. (If BOTH are set the
+  // SDK uses the API key + metered billing, so the launcher exports only one.)
+  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN && !process.env.ANTHROPIC_API_KEY) {
+    const error = 'No SDK auth — set CLAUDE_CODE_OAUTH_TOKEN (claude setup-token, subscription) or ANTHROPIC_API_KEY';
     book.updateBrief(brief.id, { status: 'error', summary: error });
     return { error };
   }

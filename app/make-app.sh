@@ -71,18 +71,24 @@ if [ ! -x "$NODE" ]; then
   done
 fi
 
-# --- SDK key: Keychain first; first-run prompt (hidden input) otherwise --------
+# --- SDK auth: Keychain first; first-run prompt otherwise. PREFER the subscription
+#     OAuth token (claude setup-token → runs on the Max plan's Agent-SDK credit,
+#     NOT metered) over a metered API key. --------------------------------------
+OAUTH="$(security find-generic-password -s "$SERVICE" -a oauth -w 2>/dev/null || true)"
 KEY="$(security find-generic-password -s "$SERVICE" -a key -w 2>/dev/null || true)"
-if [ -z "$KEY" ]; then
-  KEY="$(osascript -e 'text returned of (display dialog "Paste your Anthropic SDK API key:" default answer "" with hidden answer buttons {"Cancel","Save"} default button "Save")' 2>/dev/null || true)"
-  [ -z "$KEY" ] && exit 0
-  security add-generic-password -s "$SERVICE" -a key -w "$KEY" -U 2>/dev/null || true
-  BASE_IN="$(osascript -e 'text returned of (display dialog "Optional: custom API base URL (e.g. a dathhub gateway). Leave blank for standard Anthropic." default answer "" buttons {"Skip","Save"} default button "Save")' 2>/dev/null || true)"
-  [ -n "$BASE_IN" ] && security add-generic-password -s "$SERVICE" -a baseurl -w "$BASE_IN" -U 2>/dev/null || true
+if [ -z "$OAUTH" ] && [ -z "$KEY" ]; then
+  OAUTH="$(osascript -e 'text returned of (display dialog "Paste your Claude subscription token (Terminal: claude setup-token). Runs on your Max plan, not metered." default answer "" with hidden answer buttons {"Cancel","Save"} default button "Save")' 2>/dev/null || true)"
+  [ -z "$OAUTH" ] && exit 0
+  security add-generic-password -s "$SERVICE" -a oauth -w "$OAUTH" -U 2>/dev/null || true
 fi
-BASE="$(security find-generic-password -s "$SERVICE" -a baseurl -w 2>/dev/null || true)"
-export ANTHROPIC_API_KEY="$KEY"
-[ -n "$BASE" ] && export ANTHROPIC_BASE_URL="$BASE"
+if [ -n "$OAUTH" ]; then
+  unset ANTHROPIC_API_KEY                          # force subscription billing, not metered
+  export CLAUDE_CODE_OAUTH_TOKEN="$OAUTH"
+else
+  export ANTHROPIC_API_KEY="$KEY"
+  BASE="$(security find-generic-password -s "$SERVICE" -a baseurl -w 2>/dev/null || true)"
+  [ -n "$BASE" ] && export ANTHROPIC_BASE_URL="$BASE"
+fi
 
 # --- ensure a server WITH the key is live on the port --------------------------
 health="$(curl -s "http://localhost:$PORT/api/health" 2>/dev/null || true)"
