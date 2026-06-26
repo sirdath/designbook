@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node test.js && node skills/design-book/build-skill.mjs --check",
+    "test": "node test.js && node tools/regression.js && node skills/design-book/build-skill.mjs --check",
+    "test:regression": "node tools/regression.js",
     "mcp": "node designbook-mcp/server.js",
     "setup:pptx": "python3 -m venv .pptx-venv && ./.pptx-venv/bin/pip install -q python-pptx",
     "build:skill": "node skills/design-book/build-skill.mjs",

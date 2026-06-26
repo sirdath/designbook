@@ -1,0 +1,72 @@
+[
+  {
+    "key": "landing#0",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "electric-night",
+    "aesthetic": "energetic"
+  },
+  {
+    "key": "landing#1",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "mono-snow",
+    "aesthetic": "editorial"
+  },
+  {
+    "key": "landing#2",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "wealth-emerald",
+    "aesthetic": "luxury"
+  },
+  {
+    "key": "saas#0",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "fintech-light",
+    "aesthetic": "minimal"
+  },
+  {
+    "key": "startup#0",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "electric-night",
+    "aesthetic": "energetic"
+  },
+  {
+    "key": "agency#0",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "mono-snow",
+    "aesthetic": "editorial"
+  },
+  {
+    "key": "portfolio#0",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "ink",
+    "aesthetic": "editorial"
+  },
+  {
+    "key": "ecommerce#0",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "luxe-cream",
+    "aesthetic": "luxury"
+  },
+  {
+    "key": "restaurant#0",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "luxe-cream",
+    "aesthetic": "luxury"
+  },
+  {
+    "key": "blog#0",
+    "coherence": 88,
+    "slopHigh": 0,
+    "palette": "paper",
+    "aesthetic": "editorial"
+  }
+]
