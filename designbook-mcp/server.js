@@ -322,7 +322,7 @@ const INSTRUCTIONS = [
   '1. NEVER hand-write HTML from scratch — always start from `book_compose` (free, instant, on-brand vault tokens).',
   '2. A fresh draft has ZERO images = a wireframe. Add ≥1 real image or vector scene before saving; visual genres (ecommerce/portfolio/restaurant/agency/landing) REQUIRE imagery to pass the save-gate.',
   '3. Verify BOTH halves of quality: `book_inspect` for facts (correct) AND `book_critique` for a vision taste score against the Awwwards rubric with located fixes (beautiful). `book_view` gives the raw screenshot when you want to judge it yourself.',
-  '3b. To ACT on a critique instead of hand-editing, `book_refine` rewrites the draft to apply the fixes and re-critiques to prove the score moved (compose → critique → refine → verify → save).',
+  '3b. To ACT on a critique instead of hand-editing, `book_refine` rewrites the draft to apply the fixes (compose → critique → refine → save). To ITERATE on a page, call `book_refine({slug, instruction:"bigger hero, warmer palette"})` with no critique — one fast call per tweak.',
   '4. `book_save_page` runs a save-gate that REJECTS slop — default indigo/purple gradients, Tailwind defaults, lorem, low contrast, missing reduced-motion/ARIA, failing Core Web Vitals — with one-step check→fix findings. Fix what it flags, then re-save.',
   '5. Spend effort only on the delta the request asks for — no unrequested redesigns or gold-plating.',
   '',
@@ -565,7 +565,7 @@ async function main() {
   // ---- book_refine ----
   server.registerTool('book_refine', {
     title: 'Generative refine pass',
-    description: 'Close the loop: have a model REWRITE a draft to apply book_critique\'s located fixes — minimal diff, on-brand tokens, honoring reduced-motion, building the signature moment the critique named. Returns improved HTML + the change list. FAST PATH (one model call): pass `critique` (the book_critique result you just got) so it skips the internal pre-critique, and leave verify off. Set `verify:true` to re-critique the result for a before→after score delta (proves it moved, but adds two model calls). `instruction` adds a specific change ("warmer palette, bigger hero"). Use it instead of hand-editing when the critique gives concrete targets; then book_inspect and book_save_page. Note: rewriting a very large page is a big-output call and can be slow under API load.',
+    description: 'Close the loop: have a model REWRITE a draft to apply book_critique\'s located fixes — minimal diff, on-brand tokens, honoring reduced-motion, building the signature moment the critique named. Returns improved HTML + the change list. FAST PATH (one model call): pass `critique` (the book_critique result you just got) so it skips the internal pre-critique, and leave verify off. Set `verify:true` to re-critique the result for a before→after score delta (proves it moved, but adds two model calls). ITERATION LOOP — `book_refine({slug, instruction:"make the hero bigger and the palette warmer"})` with NO critique is a single fast call (the instruction IS the directive, so it skips the pre-critique); repeat to iterate on a page. Use it instead of hand-editing; then book_inspect and book_save_page. Note: rewriting a very large page is a big-output call and can be slow under API load.',
     inputSchema: {
       html: z.string().optional().describe('Full HTML to refine. Omit to refine a saved page by slug.'),
       slug: z.string().optional().describe('Saved page slug to refine (alternative to html).'),

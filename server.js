@@ -213,6 +213,9 @@ async function main() {
         } else if (intent.draft) {
           const seedBase = Math.abs([...String(body.text)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)) % 50;
           extra.draft = { genre: intent.draft.genre, preset: intent.draft.preset || null, seedBase, taste: intent.taste };
+        } else if (intent.edit && body.slug) {
+          extra.kind = 'edit';                 // the iteration loop: one book_refine call on the focused page
+          extra.instruction = intent.instruction;
         }
         const brief = book.addBrief({ ...body, ...extra });
         if (brief.kind === 'taste') {
@@ -222,6 +225,30 @@ async function main() {
           book.updateBrief(brief.id, { status: 'done', summary: intent.smalltalk });
           brief.status = 'done';
           brief.summary = intent.smalltalk;
+        } else if (brief.kind === 'edit') {
+          // the iteration loop: ONE book_refine call on the focused page, saved in
+          // place — cheaper + faster than the 40-turn agent for a tweak.
+          const page = book.getPage(slugify(body.slug));
+          if (!page) {
+            book.updateBrief(brief.id, { status: 'error', summary: 'no page: ' + body.slug });
+            brief.status = 'error'; brief.summary = 'no page to edit';
+          } else {
+            const out = await refine({
+              html: page.html, instruction: intent.instruction,
+              vaultRoot: vault.root, bookDir: book.dir, shotsDir: book.shotsDir,
+              model: (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6',
+            });
+            if (out.ok && out.html) {
+              book.savePage({ slug: page.manifest.slug, title: page.manifest.title, html: out.html, manifest: page.manifest });
+              const sum = (out.changes && out.changes.length) ? out.changes.slice(0, 3).join('; ') : 'applied your edit';
+              book.updateBrief(brief.id, { status: 'done', summary: sum.slice(0, 400) });
+              brief.status = 'done'; brief.summary = sum.slice(0, 400);
+            } else {
+              const e = out.error || 'edit failed';
+              book.updateBrief(brief.id, { status: 'error', summary: e });
+              brief.status = 'error'; brief.summary = e;
+            }
+          }
         }
         return send(res, 200, { brief });
       }
