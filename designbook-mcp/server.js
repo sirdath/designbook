@@ -13,12 +13,13 @@
      Verify with book_inspect facts. Spend model effort only on
      the delta the brief asks for. Save with manifest + briefId.
 
-   Tools (15):
+   Tools (19):
      orient   book_overview · book_meta
      draft    book_compose · book_variants · book_coherence
-     enrich   book_generate_image · book_save_asset      (anti-slop: real imagery)
-     verify   book_inspect · book_view
+     enrich   book_generate_image · book_save_asset · book_autofill_imagery   (anti-slop: real imagery)
+     verify   book_inspect · book_view · book_critique     (facts + vision taste)
      persist  book_list_pages · book_get_page · book_save_page
+     export   book_export_pptx · book_lottie
      briefs   book_briefs · book_claim_brief · book_complete_brief
    ============================================ */
 
@@ -36,7 +37,7 @@ export const GATE_COHERENCE_MIN = 70;
 
 // The full tool surface, single-sourced so the header/docs/tests can't drift.
 export const TOOLS = [
-  'book_overview', 'book_meta', 'book_compose', 'book_variants', 'book_coherence',
+  'book_overview', 'book_meta', 'book_compose', 'book_variants', 'book_coherence', 'book_critique',
   'book_generate_image', 'book_save_asset', 'book_autofill_imagery',
   'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page', 'book_export_pptx', 'book_lottie',
   'book_briefs', 'book_claim_brief', 'book_complete_brief',
@@ -304,11 +305,39 @@ const WORKFLOW = [
   '6. `book_save_page({title, html, manifest:{genre}, briefId})` — saves AND auto-completes the brief. The save-gate rejects with one-step `check → fix` findings if anything is off.'
 ].join('\n');
 
+// Connect-time orientation surfaced to EVERY agent via the MCP `instructions`
+// field (it lands in the client's context on initialize) — so an agent knows
+// exactly how to use Design Book BEFORE it calls a single tool, not only if it
+// happens to call book_overview. Covers both the no-brief and queue paths.
+const INSTRUCTIONS = [
+  'Design Book — a local design workbench. You compose real, on-brand web pages against a component vault (900+ snippets, 60+ palettes, taste presets), verify them with FACTS via headless Chrome (no guessing), and save them as files. Tools proxy a local server; all work is deterministic and free except local image generation.',
+  '',
+  'FIRST: call `book_overview` for live vault stats, the brief queue, and the toolset.',
+  '',
+  'TWO WAYS TO WORK:',
+  '• No brief (just make something): `book_compose({genre})` → returns full HTML → change only what was asked → add real imagery (`book_generate_image` / `book_save_asset`) → `book_inspect({html, mode:"diagnose"})` (facts) → `book_critique` (vision taste score + fixes) → `book_save_page({title, html, manifest:{genre}})`.',
+  '• From the queue: `book_briefs` → `book_claim_brief(id)` → same compose → enrich → inspect → save, passing `briefId` to `book_save_page` (which auto-completes the brief).',
+  '',
+  'RULES (these keep output custom-grade, not AI-slop):',
+  '1. NEVER hand-write HTML from scratch — always start from `book_compose` (free, instant, on-brand vault tokens).',
+  '2. A fresh draft has ZERO images = a wireframe. Add ≥1 real image or vector scene before saving; visual genres (ecommerce/portfolio/restaurant/agency/landing) REQUIRE imagery to pass the save-gate.',
+  '3. Verify BOTH halves of quality: `book_inspect` for facts (correct) AND `book_critique` for a vision taste score against the Awwwards rubric with located fixes (beautiful). `book_view` gives the raw screenshot when you want to judge it yourself.',
+  '4. `book_save_page` runs a save-gate that REJECTS slop — default indigo/purple gradients, Tailwind defaults, lorem, low contrast, missing reduced-motion/ARIA, failing Core Web Vitals — with one-step check→fix findings. Fix what it flags, then re-save.',
+  '5. Spend effort only on the delta the request asks for — no unrequested redesigns or gold-plating.',
+  '',
+  'Richer, bespoke pieces: the sibling MCP `frontendmaxxing` (`search_components`, `get_snippet`, `get_palette`, `get_skill "web-excellence"`) is the full vault.',
+  '',
+  'If any tool returns "Design Book server unreachable", the local core server is down — start it (double-click Design Book.app, or `node server.js` in the designbook root).',
+].join('\n');
+
 // =====================================================
 // Server setup
 // =====================================================
 async function main() {
-  const server = new McpServer({ name: 'designbook', version: '1.0.0' });
+  const server = new McpServer(
+    { name: 'designbook', version: '1.0.0' },
+    { instructions: INSTRUCTIONS }
+  );
   const RO = { readOnlyHint: true, openWorldHint: false };
   const RW = { readOnlyHint: false, openWorldHint: false };
 
@@ -499,6 +528,37 @@ async function main() {
       ...(r.warnings || []).map((w) => `- **${w.type}** ×${w.count} — ${w.hint}${w.sample ? ` (e.g. ${JSON.stringify(w.sample.slice(0, 2))})` : ''}`)
     ].join('\n');
     return { content: [{ type: 'text', text }], structuredContent: { score: r.score, ok: r.ok, counts: r.counts || {}, warnings: r.warnings || [] } };
+  }));
+
+  // ---- book_critique ----
+  server.registerTool('book_critique', {
+    title: 'Vision taste critique',
+    description: 'The TASTE half of the MOAT. Renders the page to a REAL screenshot and has a VISION model judge the pixels against the Awwwards rubric (design 40 / usability 30 / creativity 20 / content 10) — returning scores, a one-line verdict, the ONE signature moment, and located, actionable fixes ("hero headline and subhead are the same weight — drop the subhead to 400/0.7 so the H1 leads"). book_inspect catches what is WRONG (facts: contrast/overflow/ARIA/CWV); book_critique catches what is BLAND (taste). Run it once a draft is structurally clean, before book_save_page, to push from "passes" to "designed". Costs one model call — compose + inspect stay free.',
+    inputSchema: {
+      html: z.string().optional().describe('Full HTML to critique. Omit to critique a saved page by slug.'),
+      slug: z.string().optional().describe('Saved page slug to critique (alternative to html).'),
+    },
+    outputSchema: {
+      ok: z.boolean(), scores: z.any(), verdict: z.string(), looksAiGenerated: z.boolean(),
+      signatureMoment: z.string(), strengths: z.array(z.string()), issues: z.array(z.any()),
+      screenshotUrl: z.string().optional(), model: z.string().optional(),
+    },
+    annotations: RO
+  }, guard(async ({ html, slug }) => {
+    const r = await api('POST', '/api/critique', { html, slug });
+    const s = r.scores || {};
+    const sev = { high: '🔴', med: '🟡', low: '⚪' };
+    const text = [
+      `# Taste critique: ${s.total ?? '?'}/100${r.looksAiGenerated ? '  ·  ⚠︎ reads as AI-generated' : ''}`,
+      r.verdict ? `> ${r.verdict}` : '',
+      '',
+      `**Scores** — design ${s.design}/40 · usability ${s.usability}/30 · creativity ${s.creativity}/20 · content ${s.content}/10`,
+      r.signatureMoment ? `\n**Signature moment:** ${r.signatureMoment}` : '',
+      (r.strengths && r.strengths.length) ? `\n**Strengths**\n${r.strengths.map((x) => `- ${x}`).join('\n')}` : '',
+      (r.issues && r.issues.length) ? `\n**Issues — fix before save**\n${r.issues.map((i) => `- ${sev[i.severity] || ''} **${i.area}** — ${i.observe}\n  → ${i.fix}`).join('\n')}` : '\n_No issues flagged._',
+      r.screenshotUrl ? `\nscreenshot: ${r.screenshotUrl}` : '',
+    ].filter(Boolean).join('\n');
+    return { content: [{ type: 'text', text }], structuredContent: r };
   }));
 
   // ---- book_export_pptx ----

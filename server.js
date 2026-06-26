@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { loadVault, injectBase } from './lib/vault.js';
 import { createBook, slugify } from './lib/book.js';
 import { inspect, VIEWPORTS, DEFAULT_VIEWPORTS } from './lib/inspect.js';
+import { critique } from './lib/critique.js';
 import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
@@ -504,6 +505,29 @@ async function main() {
           if (r.screenshotPath) r.screenshotUrl = '/book/shots/' + r.screenshotPath.split('/').pop();
         }
         return send(res, 200, payload);
+      }
+
+      // taste critique — render the page + have a VISION model score the pixels
+      // against the Awwwards rubric (the taste half of the MOAT). Costs one model
+      // call; everything above (compose/inspect) is free.
+      if (path === '/api/critique' && method === 'POST') {
+        const body = await readBody(req);
+        let html = body.html;
+        let label = body.label;
+        if (!html && body.slug) {
+          const page = book.getPage(slugify(body.slug));
+          if (!page) return err(res, 404, 'no page: ' + body.slug);
+          html = page.html;
+          label = label || page.manifest.slug;
+        }
+        if (!html) return err(res, 400, 'html or slug required');
+        const model = (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6';
+        const out = await critique({
+          html, vaultRoot: vault.root, bookDir: book.dir, shotsDir: book.shotsDir,
+          label: label ? slugify(label) : 'critique', model,
+        });
+        if (out.error) return err(res, /auth/i.test(out.error) ? 503 : 500, out.error);
+        return send(res, 200, out);
       }
 
       // SSE
