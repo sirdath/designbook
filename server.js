@@ -16,7 +16,7 @@ import { loadVault, injectBase } from './lib/vault.js';
 import { createBook, slugify } from './lib/book.js';
 import { inspect, VIEWPORTS, DEFAULT_VIEWPORTS } from './lib/inspect.js';
 import { critique } from './lib/critique.js';
-import { refine } from './lib/refine.js';
+import { refine, shouldPatch } from './lib/refine.js';
 import { defaultArchetype } from './lib/archetypes.js';
 import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
@@ -242,6 +242,7 @@ async function main() {
           } else {
             const out = await refine({
               html: page.html, instruction: intent.instruction,
+              patch: shouldPatch(page.html, intent.instruction),
               vaultRoot: vault.root, bookDir: book.dir, shotsDir: book.shotsDir,
               model: (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6',
             });
@@ -283,6 +284,7 @@ async function main() {
             const b = book.addBrief({ text: body.text, engine: 'edit', kind: 'edit', pageSlug: page.manifest.slug });
             const out = await refine({
               html: page.html, instruction: body.text,
+              patch: shouldPatch(page.html, body.text),
               vaultRoot: vault.root, bookDir: book.dir, shotsDir: book.shotsDir,
               model: (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6',
             });
