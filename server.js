@@ -17,6 +17,7 @@ import { createBook, slugify } from './lib/book.js';
 import { inspect, VIEWPORTS, DEFAULT_VIEWPORTS } from './lib/inspect.js';
 import { critique } from './lib/critique.js';
 import { refine } from './lib/refine.js';
+import { defaultArchetype } from './lib/archetypes.js';
 import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
@@ -96,6 +97,12 @@ async function main() {
       aesthetic: body.aesthetic, density: body.density, motion: body.motion,
       fontPair: body.fontPair || body.font_pair, seed: body.seed,
     };
+    // floor-raiser: a bare compose (no taste direction) gets a curated genre
+    // archetype instead of the composer's generic saas-indigo/minimal default.
+    // An explicit preset/aesthetic/palette always wins.
+    if (!opts.preset && !opts.aesthetic && !opts.palette) {
+      opts.preset = defaultArchetype(opts.genre, opts.seed);
+    }
     if (body.platform === 'mobile') {
       const r = vault.composeApp(opts);
       const { html, fixed } = autofix(r.html);
