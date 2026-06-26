@@ -252,14 +252,44 @@ async function main() {
         }
         return send(res, 200, { brief });
       }
-      // chat → a REAL agent run (the SDK engine over the designbook MCP tools).
-      // No keyword tricks, no presets: the model decides everything. Returns
-      // { brief, needsSetup? } — needsSetup carries instructions when no engine
-      // is available, so the UI can render a proper setup card.
+      // chat → the human-in-the-loop iteration loop. A tweak or re-theme on the
+      // page already on screen is ONE book_refine call (~15-40s); smalltalk is an
+      // instant reply; fresh builds + anything ambiguous fall through to the full
+      // SDK agent (the model decides everything, over the designbook MCP tools).
+      // Returns { brief, needsSetup? } — needsSetup carries setup instructions when
+      // no engine is available, so the UI can render a setup card.
       if (path === '/api/chat' && method === 'POST') {
         const body = await readBody(req);
         if (!body.text || !String(body.text).trim()) return err(res, 400, 'text required');
         if (body.model) book.setSettings({ sdk: { ...(book.getSettings().sdk || {}), model: body.model } });
+
+        // -- fast path: smalltalk reply + single-call edits/re-themes on the focused doc --
+        const intent = parseIntent(body.text, vault, { hasDoc: !!body.slug });
+        if (intent.smalltalk) {
+          const b = book.addBrief({ text: body.text, engine: 'chat', kind: 'chat', pageSlug: body.slug || null });
+          book.updateBrief(b.id, { status: 'done', summary: intent.smalltalk });
+          return send(res, 200, { brief: book.listBriefs().find((x) => x.id === b.id) });
+        }
+        if (body.slug && (intent.edit || intent.tasteOnly)) {
+          const page = book.getPage(slugify(body.slug));
+          if (page) {
+            const b = book.addBrief({ text: body.text, engine: 'edit', kind: 'edit', pageSlug: page.manifest.slug });
+            const out = await refine({
+              html: page.html, instruction: body.text,
+              vaultRoot: vault.root, bookDir: book.dir, shotsDir: book.shotsDir,
+              model: (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6',
+            });
+            if (out.ok && out.html) {
+              book.savePage({ slug: page.manifest.slug, title: page.manifest.title, html: out.html, manifest: page.manifest });
+              const sum = (out.changes && out.changes.length) ? out.changes.slice(0, 3).join('; ') : 'applied your edit';
+              book.updateBrief(b.id, { status: 'done', summary: sum.slice(0, 400) });
+            } else {
+              book.updateBrief(b.id, { status: 'error', summary: out.error || 'edit failed' });
+            }
+            return send(res, 200, { brief: book.listBriefs().find((x) => x.id === b.id) });
+          }
+        }
+
         const brief = book.addBrief({ text: body.text, engine: 'sdk', kind: 'agent', pageSlug: body.slug || null });
         let engine;
         try { engine = await import('./engines/sdk.js'); }
