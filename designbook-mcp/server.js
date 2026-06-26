@@ -13,9 +13,9 @@
      Verify with book_inspect facts. Spend model effort only on
      the delta the brief asks for. Save with manifest + briefId.
 
-   Tools (19):
+   Tools (20):
      orient   book_overview · book_meta
-     draft    book_compose · book_variants · book_coherence
+     draft    book_compose · book_variants · book_coherence · book_refine
      enrich   book_generate_image · book_save_asset · book_autofill_imagery   (anti-slop: real imagery)
      verify   book_inspect · book_view · book_critique     (facts + vision taste)
      persist  book_list_pages · book_get_page · book_save_page
@@ -37,7 +37,7 @@ export const GATE_COHERENCE_MIN = 70;
 
 // The full tool surface, single-sourced so the header/docs/tests can't drift.
 export const TOOLS = [
-  'book_overview', 'book_meta', 'book_compose', 'book_variants', 'book_coherence', 'book_critique',
+  'book_overview', 'book_meta', 'book_compose', 'book_variants', 'book_coherence', 'book_critique', 'book_refine',
   'book_generate_image', 'book_save_asset', 'book_autofill_imagery',
   'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page', 'book_export_pptx', 'book_lottie',
   'book_briefs', 'book_claim_brief', 'book_complete_brief',
@@ -322,6 +322,7 @@ const INSTRUCTIONS = [
   '1. NEVER hand-write HTML from scratch — always start from `book_compose` (free, instant, on-brand vault tokens).',
   '2. A fresh draft has ZERO images = a wireframe. Add ≥1 real image or vector scene before saving; visual genres (ecommerce/portfolio/restaurant/agency/landing) REQUIRE imagery to pass the save-gate.',
   '3. Verify BOTH halves of quality: `book_inspect` for facts (correct) AND `book_critique` for a vision taste score against the Awwwards rubric with located fixes (beautiful). `book_view` gives the raw screenshot when you want to judge it yourself.',
+  '3b. To ACT on a critique instead of hand-editing, `book_refine` rewrites the draft to apply the fixes and re-critiques to prove the score moved (compose → critique → refine → verify → save).',
   '4. `book_save_page` runs a save-gate that REJECTS slop — default indigo/purple gradients, Tailwind defaults, lorem, low contrast, missing reduced-motion/ARIA, failing Core Web Vitals — with one-step check→fix findings. Fix what it flags, then re-save.',
   '5. Spend effort only on the delta the request asks for — no unrequested redesigns or gold-plating.',
   '',
@@ -557,6 +558,43 @@ async function main() {
       (r.strengths && r.strengths.length) ? `\n**Strengths**\n${r.strengths.map((x) => `- ${x}`).join('\n')}` : '',
       (r.issues && r.issues.length) ? `\n**Issues — fix before save**\n${r.issues.map((i) => `- ${sev[i.severity] || ''} **${i.area}** — ${i.observe}\n  → ${i.fix}`).join('\n')}` : '\n_No issues flagged._',
       r.screenshotUrl ? `\nscreenshot: ${r.screenshotUrl}` : '',
+    ].filter(Boolean).join('\n');
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
+  // ---- book_refine ----
+  server.registerTool('book_refine', {
+    title: 'Generative refine pass',
+    description: 'Close the loop: have a model REWRITE a draft to apply book_critique\'s located fixes — minimal diff, on-brand tokens, honoring reduced-motion, building the signature moment the critique named. Returns improved HTML + the change list. FAST PATH (one model call): pass `critique` (the book_critique result you just got) so it skips the internal pre-critique, and leave verify off. Set `verify:true` to re-critique the result for a before→after score delta (proves it moved, but adds two model calls). `instruction` adds a specific change ("warmer palette, bigger hero"). Use it instead of hand-editing when the critique gives concrete targets; then book_inspect and book_save_page. Note: rewriting a very large page is a big-output call and can be slow under API load.',
+    inputSchema: {
+      html: z.string().optional().describe('Full HTML to refine. Omit to refine a saved page by slug.'),
+      slug: z.string().optional().describe('Saved page slug to refine (alternative to html).'),
+      instruction: z.string().optional().describe('Optional specific change to apply on top of the critique fixes.'),
+      critique: z.any().optional().describe('A prior book_critique result — pass it to skip the internal pre-critique (saves a model call).'),
+      verify: z.boolean().optional().describe('Re-critique the result for a before/after score delta. Default false (lean, one call); set true to prove the score moved (adds two model calls).'),
+    },
+    outputSchema: {
+      ok: z.boolean(), html: z.string(), changes: z.array(z.string()),
+      before: z.any().optional(), after: z.any().optional(), delta: z.number().nullable().optional(),
+      truncated: z.boolean().optional(), unchanged: z.boolean().optional(), model: z.string().optional(),
+    },
+    annotations: RO
+  }, guard(async ({ html, slug, instruction, critique, verify }) => {
+    const r = await api('POST', '/api/refine', { html, slug, instruction, critique, verify });
+    if (r.unchanged) {
+      return { content: [{ type: 'text', text: `# Refine — no change\n${r.note || 'nothing to fix'}` }], structuredContent: r };
+    }
+    const b = r.before, a = r.after;
+    const head = (a && b)
+      ? `# Refine: ${b.total} → ${a.total}/100  (${r.delta >= 0 ? '+' : ''}${r.delta})${a.looksAiGenerated ? '  · still reads AI-generated' : ''}`
+      : '# Refine complete';
+    const text = [
+      head,
+      a && a.verdict ? `> ${a.verdict}` : (b && b.verdict ? `> was: ${b.verdict}` : ''),
+      r.truncated ? '\n⚠︎ output may be truncated (no closing </html>) — re-run, or refine in smaller pieces.' : '',
+      (r.changes && r.changes.length) ? `\n**Changed**\n${r.changes.map((c) => `- ${c}`).join('\n')}` : '',
+      a && a.screenshotUrl ? `\nscreenshot: ${a.screenshotUrl}` : '',
+      '\nImproved HTML is in structuredContent.html — verify with book_inspect, then book_save_page.',
     ].filter(Boolean).join('\n');
     return { content: [{ type: 'text', text }], structuredContent: r };
   }));
