@@ -565,13 +565,14 @@ async function main() {
   // ---- book_refine ----
   server.registerTool('book_refine', {
     title: 'Generative refine pass',
-    description: 'Close the loop: have a model REWRITE a draft to apply book_critique\'s located fixes — minimal diff, on-brand tokens, honoring reduced-motion, building the signature moment the critique named. Returns improved HTML + the change list. FAST PATH (one model call): pass `critique` (the book_critique result you just got) so it skips the internal pre-critique, and leave verify off. Set `verify:true` to re-critique the result for a before→after score delta (proves it moved, but adds two model calls). ITERATION LOOP — `book_refine({slug, instruction:"make the hero bigger and the palette warmer"})` with NO critique is a single fast call (the instruction IS the directive, so it skips the pre-critique); repeat to iterate on a page. Use it instead of hand-editing; then book_inspect and book_save_page. Note: rewriting a very large page is a big-output call and can be slow under API load.',
+    description: 'Close the loop: have a model REWRITE a draft to apply book_critique\'s located fixes — minimal diff, on-brand tokens, honoring reduced-motion, building the signature moment the critique named. Returns improved HTML + the change list. FAST PATH (one model call): pass `critique` (the book_critique result you just got) so it skips the internal pre-critique, and leave verify off. Set `verify:true` to re-critique the result for a before→after score delta (proves it moved, but adds two model calls). ITERATION LOOP — `book_refine({slug, instruction:"make the hero bigger and the palette warmer"})` with NO critique is a single fast call (the instruction IS the directive, so it skips the pre-critique); repeat to iterate on a page. Use it instead of hand-editing; then book_inspect and book_save_page. By DEFAULT it auto-picks the safer change: a small CSS-overlay PATCH (preserves the page; fixes type/CTA/spacing/color/hierarchy/nav) for large or polished pages and restyles, vs a full rewrite only for small structural edits (e.g. "add a section"). A full rewrite regenerates everything and can REGRESS a polished page (measured: apex 58→44 vs the patch 58→63), so reserve it. Pass patch:true to force the overlay, patch:false to force a full rewrite.',
     inputSchema: {
       html: z.string().optional().describe('Full HTML to refine. Omit to refine a saved page by slug.'),
       slug: z.string().optional().describe('Saved page slug to refine (alternative to html).'),
       instruction: z.string().optional().describe('Optional specific change to apply on top of the critique fixes.'),
       critique: z.any().optional().describe('A prior book_critique result — pass it to skip the internal pre-critique (saves a model call).'),
       verify: z.boolean().optional().describe('Re-critique the result for a before/after score delta. Default false (lean, one call); set true to prove the score moved (adds two model calls).'),
+      patch: z.boolean().optional().describe('Force the change style: true = small CSS-overlay patch (preserves the page, throttle-safe); false = full rewrite (can add markup, but can regress a polished page). Omit to auto-pick (patch for large/restyle, full rewrite for small structural edits).'),
     },
     outputSchema: {
       ok: z.boolean(), html: z.string(), changes: z.array(z.string()),
@@ -579,8 +580,8 @@ async function main() {
       truncated: z.boolean().optional(), unchanged: z.boolean().optional(), model: z.string().optional(),
     },
     annotations: RO
-  }, guard(async ({ html, slug, instruction, critique, verify }) => {
-    const r = await api('POST', '/api/refine', { html, slug, instruction, critique, verify });
+  }, guard(async ({ html, slug, instruction, critique, verify, patch }) => {
+    const r = await api('POST', '/api/refine', { html, slug, instruction, critique, verify, patch });
     if (r.unchanged) {
       return { content: [{ type: 'text', text: `# Refine — no change\n${r.note || 'nothing to fix'}` }], structuredContent: r };
     }

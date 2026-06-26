@@ -614,7 +614,10 @@ async function main() {
         const model = (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6';
         const out = await refine({
           html, instruction: body.instruction, critique: body.critique,
-          verify: body.verify === true, patch: body.patch === true,
+          verify: body.verify === true,
+          // default to the safer change (patch preserves the page; full rewrite can
+          // regress a polished one — apex 58→44). Explicit patch:true/false wins.
+          patch: typeof body.patch === 'boolean' ? body.patch : shouldPatch(html, body.instruction),
           vaultRoot: vault.root, bookDir: book.dir, shotsDir: book.shotsDir, model,
         });
         if (out.error) return err(res, /auth/i.test(out.error) ? 503 : 500, out.error);
