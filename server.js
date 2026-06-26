@@ -612,7 +612,7 @@ async function main() {
         const model = (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6';
         const out = await refine({
           html, instruction: body.instruction, critique: body.critique,
-          verify: body.verify === true,
+          verify: body.verify === true, patch: body.patch === true,
           vaultRoot: vault.root, bookDir: book.dir, shotsDir: book.shotsDir, model,
         });
         if (out.error) return err(res, /auth/i.test(out.error) ? 503 : 500, out.error);
