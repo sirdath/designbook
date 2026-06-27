@@ -21,6 +21,36 @@ export type VideoPlan = {
   height?: number;
   totalDurationInFrames?: number;
   sfx?: boolean;
+  audio?: { music?: { src: string; volume?: number }; voiceover?: { src: string; volume?: number } };
+  captions?: { text: string; fromFrame: number; toFrame: number }[];
+};
+
+// Music bed + voiceover (agent-attached audio URLs; narration TTS is out of scope
+// locally). Music loops low under the SFX; voiceover plays over the whole timeline.
+const AudioBed = ({ audio }: { audio?: VideoPlan['audio'] }) => {
+  if (!audio) return null;
+  return (
+    <>
+      {audio.music && audio.music.src ? <Audio src={audio.music.src} loop volume={audio.music.volume ?? 0.18} /> : null}
+      {audio.voiceover && audio.voiceover.src ? <Audio src={audio.voiceover.src} volume={audio.voiceover.volume ?? 1} /> : null}
+    </>
+  );
+};
+
+// Caption overlays at frame ranges (agent-provided, or from a future whisper pass).
+const CaptionLayer = ({ captions }: { captions?: VideoPlan['captions'] }) => {
+  if (!captions || !captions.length) return null;
+  return (
+    <>
+      {captions.map((c, i) => (
+        <Sequence key={i} from={c.fromFrame || 0} durationInFrames={Math.max(1, (c.toFrame || 0) - (c.fromFrame || 0))}>
+          <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', padding: '0 0 84px' }}>
+            <div style={{ background: 'rgba(0,0,0,0.62)', color: '#fff', padding: '14px 30px', borderRadius: 12, fontSize: 42, fontWeight: 600, lineHeight: 1.25, fontFamily: 'Inter, system-ui, sans-serif', maxWidth: '78%', textAlign: 'center' }}>{c.text}</div>
+          </AbsoluteFill>
+        </Sequence>
+      ))}
+    </>
+  );
 };
 
 // SFX layer: whoosh leads each transition, a pop punches the StatBurst, a chime
@@ -87,7 +117,9 @@ export const VideoFromPlan = ({ plan }: { plan: VideoPlan }) => {
       <TransitionSeries>{children}</TransitionSeries>
       {/* cinematic vignette — subtle edge darkening so scenes don't read flat/digital */}
       <AbsoluteFill style={{ boxShadow: 'inset 0 0 320px rgba(0,0,0,0.4)', pointerEvents: 'none' }} />
+      <CaptionLayer captions={p.captions} />
       {p.sfx !== false ? <SfxLayer scenes={p.scenes} /> : null}
+      <AudioBed audio={p.audio} />
     </AbsoluteFill>
   );
 };
