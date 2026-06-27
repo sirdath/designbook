@@ -131,6 +131,12 @@ export function gateFindings(coh, diag, ctx) {
       cause: `${diag.layout.occluded.length} control(s) covered by an unrelated element — a human can't click them${oc ? ` — e.g. ${oc.sel}${oc.sample ? ` "${oc.sample}"` : ''} sits under ${oc.by}` : ''}`,
       fix: 'a decorative hero/scrim or an ::after band sits over the control — give the control position+z-index above it, or pointer-events:none on the decoration' });
   }
+  if ((diag?.layout?.asymmetry || []).length) {
+    const sy = diag.layout.asymmetry[0];
+    f.push({ check: 'asymmetry', code: `asymmetry:${diag.layout.asymmetry.map((a) => a.kind).join(',')}`,
+      cause: `${diag.layout.asymmetry.length} unintended-asymmetry signal(s) — e.g. ${sy.sel}: ${sy.note}`,
+      fix: 'restore symmetric horizontal padding/margins, or center the declared-centered block (check for a stray margin / horizontal overflow pushing it)' });
+  }
   // imagery craft-floor — visual-first genres must carry real imagery
   const genre = String(ctx?.genre || '').toLowerCase();
   if (IMAGERY_MANDATORY.has(genre) && coh?.authenticity?.imageCount === 0) {
@@ -252,8 +258,11 @@ function renderDiagnoseReport(r) {
     const oc = r.layout.occluded[0];
     out.push(`- ✗ occlusion: ${r.layout.occluded.length} control(s) covered by an unrelated element (unclickable) — e.g. \`${oc.sel}\` under \`${oc.by}\`. Raise the control's z-index or set \`pointer-events:none\` on the decoration.`);
   }
+  if ((r.layout?.asymmetry || []).length) {
+    out.push(...r.layout.asymmetry.map((a) => `- ⚠ symmetry (${a.kind}): \`${a.sel}\` — ${a.note}`));
+  }
   if ((r.css?.undefinedVars || []).length) out.push(`- ⚠ undefined CSS vars: ${r.css.undefinedVars.join(', ')}`);
-  if (out.length === 1) out.push('✓ clean — no console errors, no invisible/collapsed content, no overflow, a11y OK');
+  if (out.length === 1) out.push('✓ clean — no console errors, no invisible/collapsed content, no overflow, symmetric layout, a11y OK');
   return out.join('\n');
 }
 
