@@ -126,10 +126,28 @@ async function main() {
 
   // The book_video_compose scorer: resolve a brand-matched theme from the vault
   // (the SAME palette tokens as the page genre) and emit a deterministic plan.
-  function composeVideoWithScore(body) {
-    const genre = body.genre;
+  // With a pageSlug it CLONES the real page: renders it to a screenshot and drops
+  // that into the ScreenshotShowcase scene(s), so the video shows the actual
+  // product, not a faux UI — and inherits the page's genre. Async (one render).
+  async function composeVideoWithScore(body) {
+    let genre = body.genre;
     const seed = body.seed;
     let preset = body.preset;
+    let pageShotUrl = null;
+
+    if (body.pageSlug) {
+      const page = book.getPage(slugify(body.pageSlug));
+      if (page) {
+        genre = genre || page.manifest.genre || 'landing';
+        try {
+          const shot = await inspect({ html: page.html, vaultRoot: vault.root, bookDir: book.dir, viewports: ['desktop'], screenshot: true, fullPage: false, shotsDir: book.shotsDir, label: 'vidpage-' + page.manifest.slug });
+          const sp = (shot.reports || []).find((r) => r.screenshotPath);
+          if (sp) pageShotUrl = `http://localhost:${PORT}/book/shots/` + sp.screenshotPath.split('/').pop();
+        } catch { /* page render failed → fall back to the faux UI */ }
+      }
+    }
+    genre = genre || 'landing';
+
     if (!preset && !body.palette && !body.aesthetic) preset = defaultArchetype(genre, seed);
     const presetDef = (vault.presets.presets || []).find((p) => p.name === preset) || null;
     const paletteName = body.palette || (presetDef && presetDef.palette) || null;
@@ -142,7 +160,11 @@ async function main() {
       fontPair: (presetDef && presetDef.fontPair) || null,
       tokens: tk ? { bg: tk.bg, ink: tk.fg, accent: tk.accent, muted: tk.muted } : undefined,
     };
-    const plan = composeVideoPlan({ genre, preset, aspect: body.aspect, seed, theme });
+    const plan = composeVideoPlan({
+      genre, preset, aspect: body.aspect, seed, theme,
+      pageShot: pageShotUrl, pageSlug: body.pageSlug ? slugify(body.pageSlug) : null,
+    });
+
     const coh = videoCoherence(plan);
     return { plan, coherence: { score: coh.score, ok: coh.ok, findings: coh.findings, totalSeconds: coh.totalSeconds } };
   }
@@ -654,16 +676,16 @@ async function main() {
       // isolated remotion-studio/ install (degrades to {skipped} when absent). =====
       if (path === '/api/video-compose' && method === 'POST') {
         const body = await readBody(req);
-        if (!body.genre && !(body.plan && body.plan.scenes)) return err(res, 400, 'genre or plan required');
-        return send(res, 200, body.plan && body.plan.scenes ? { plan: body.plan, coherence: videoCoherence(body.plan) } : composeVideoWithScore(body));
+        if (!body.genre && !body.pageSlug && !(body.plan && body.plan.scenes)) return err(res, 400, 'genre, pageSlug, or plan required');
+        return send(res, 200, body.plan && body.plan.scenes ? { plan: body.plan, coherence: videoCoherence(body.plan) } : await composeVideoWithScore(body));
       }
       if (path === '/api/video-render' && method === 'GET') {
         return send(res, 200, { available: videoEngine.findRemotion().available });
       }
       if ((path === '/api/video-inspect' || path === '/api/video-critique' || path === '/api/video-refine' || path === '/api/video-render') && method === 'POST') {
         const body = await readBody(req);
-        if (!body.plan && !body.genre) return err(res, 400, 'plan or genre required');
-        const plan = body.plan && body.plan.scenes ? body.plan : composeVideoWithScore(body).plan;
+        if (!body.plan && !body.genre && !body.pageSlug) return err(res, 400, 'plan, genre, or pageSlug required');
+        const plan = body.plan && body.plan.scenes ? body.plan : (await composeVideoWithScore(body)).plan;
         const model = (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6';
         let out;
         if (path === '/api/video-inspect') out = await videoEngine.inspectVideo({ plan, shotsDir: book.shotsDir });

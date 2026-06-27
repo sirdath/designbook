@@ -977,12 +977,13 @@ async function main() {
     preset: z.string().optional().describe('Optional taste archetype (else auto-picked, brand-matched to the genre).'),
     aspect: z.enum(['16:9', '1:1', '9:16']).optional().describe('Aspect ratio (default 16:9).'),
     seed: z.number().optional().describe('Vary transitions/archetype deterministically.'),
+    pageSlug: z.string().optional().describe('CLONE a saved page into the video — renders the real page screenshot into the ScreenshotShowcase scene and inherits the page genre. The "launch video for this page" flow.'),
   };
-  const planBody = (a) => (a.plan ? { plan: a.plan } : { genre: a.genre, preset: a.preset, aspect: a.aspect, seed: a.seed });
+  const planBody = (a) => (a.plan ? { plan: a.plan } : { genre: a.genre, preset: a.preset, aspect: a.aspect, seed: a.seed, pageSlug: a.pageSlug });
 
   server.registerTool('book_video_compose', {
     title: 'Compose a video plan',
-    description: 'DRAFT A SAAS-STYLE VIDEO PLAN — free, instant, deterministic, no Chrome, no tokens (the book_compose of video). Emits ordered SCENES (TitleCard/FeatureCard/ScreenshotShowcase/StatBurst/LogoReveal/QuoteCard/BulletList/CTACard) with blessed frame durations + real placeholder copy + a theme whose palette tokens MATCH the page genre (brand-identical video). Then set scene props/copy/media, verify facts with book_video_inspect, taste with book_video_critique, iterate with book_video_refine, export with book_video_render. The PLAN is the single source of truth — edit the plan JSON, never React.',
+    description: 'DRAFT A SAAS-STYLE VIDEO PLAN — free, instant, deterministic, no Chrome, no tokens (the book_compose of video). Emits ordered SCENES (TitleCard/FeatureCard/ScreenshotShowcase/StatBurst/LogoReveal/QuoteCard/BulletList/CTACard) with blessed frame durations + real placeholder copy + a theme whose palette tokens MATCH the page genre (brand-identical video). Pass `pageSlug` to CLONE a real saved page into the video — its screenshot fills the product-showcase scene (the "launch video for this page" flow). Then set scene props/copy/media, verify facts with book_video_inspect, taste with book_video_critique, iterate with book_video_refine, export with book_video_render. The PLAN is the single source of truth — edit the plan JSON, never React.',
     inputSchema: VIDEO_IN,
     outputSchema: { plan: z.any(), coherence: z.any() },
     annotations: RO

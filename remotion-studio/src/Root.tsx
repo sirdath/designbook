@@ -1,4 +1,4 @@
-import { Composition, AbsoluteFill } from 'remotion';
+import { Composition, AbsoluteFill, Audio, Sequence, staticFile } from 'remotion';
 import { TransitionSeries, linearTiming } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { slide } from '@remotion/transitions/slide';
@@ -20,6 +20,30 @@ export type VideoPlan = {
   width?: number;
   height?: number;
   totalDurationInFrames?: number;
+  sfx?: boolean;
+};
+
+// SFX layer: whoosh leads each transition, a pop punches the StatBurst, a chime
+// lands the CTA. Files are license-free, ffmpeg-synthesized (public/sfx/*.mp3).
+const SfxLayer = ({ scenes }: { scenes: Scene[] }) => {
+  const events: { frame: number; sfx: string }[] = [];
+  let start = 0;
+  scenes.forEach((sc, i) => {
+    if (i > 0 && sc.transition) events.push({ frame: Math.max(0, start - 7), sfx: 'whoosh' });
+    if (sc.type === 'StatBurst') events.push({ frame: start + 6, sfx: 'pop' });
+    if (sc.type === 'CTACard') events.push({ frame: start + 4, sfx: 'chime' });
+    const next = scenes[i + 1];
+    start += (sc.durationInFrames || 0) - (next && next.transition ? TRANSITION_FRAMES : 0);
+  });
+  return (
+    <>
+      {events.map((e, i) => (
+        <Sequence key={i} from={e.frame} durationInFrames={45}>
+          <Audio src={staticFile('sfx/' + e.sfx + '.mp3')} />
+        </Sequence>
+      ))}
+    </>
+  );
 };
 
 // A minimal default so Remotion Studio shows something; the real plan always
@@ -61,6 +85,7 @@ export const VideoFromPlan = ({ plan }: { plan: VideoPlan }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: bg }}>
       <TransitionSeries>{children}</TransitionSeries>
+      {p.sfx !== false ? <SfxLayer scenes={p.scenes} /> : null}
     </AbsoluteFill>
   );
 };
