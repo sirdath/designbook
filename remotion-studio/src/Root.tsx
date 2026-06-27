@@ -53,28 +53,48 @@ const CaptionLayer = ({ captions }: { captions?: VideoPlan['captions'] }) => {
   );
 };
 
-// SFX layer: whoosh leads each transition, a pop punches the StatBurst, a chime
-// lands the CTA. Files are license-free, ffmpeg-synthesized (public/sfx/*.mp3).
-const SfxLayer = ({ scenes }: { scenes: Scene[] }) => {
+// Per-sound mix levels (the pad sits under everything; keystrokes are a whisper).
+const SFX_VOL: Record<string, number> = { whoosh: 0.5, pop: 0.7, chime: 0.6, click: 0.55, key: 0.3, success: 0.72 };
+
+// SFX layer: whoosh leads each transition, pop punches StatBurst, chime lands CTA,
+// and UIDemo gets a full Foley pass — a keystroke per typed char, a click on the
+// option-select and the button, then a success chime. Synthesized, license-free
+// (tools/generate-sfx.mjs → public/sfx/*.mp3). Timing constants mirror UIDemo.tsx.
+const SfxLayer = ({ scenes, fps = 30 }: { scenes: Scene[]; fps?: number }) => {
   const events: { frame: number; sfx: string }[] = [];
   let start = 0;
   scenes.forEach((sc, i) => {
     if (i > 0 && sc.transition) events.push({ frame: Math.max(0, start - 7), sfx: 'whoosh' });
     if (sc.type === 'StatBurst') events.push({ frame: start + 6, sfx: 'pop' });
     if (sc.type === 'CTACard') events.push({ frame: start + 4, sfx: 'chime' });
+    if (sc.type === 'UIDemo') {
+      const q = String((sc.props && sc.props.query) || 'Active users');
+      const typeStart = 22, cps = 13, selectAt = 70, clickAt = 104;
+      for (let c = 0; c < q.length; c++) {
+        if (q[c] === ' ') continue;
+        events.push({ frame: start + Math.round(typeStart + (c / cps) * fps), sfx: 'key' });
+      }
+      events.push({ frame: start + selectAt, sfx: 'click' });
+      events.push({ frame: start + clickAt, sfx: 'click' });
+      events.push({ frame: start + clickAt + 4, sfx: 'success' });
+    }
     const next = scenes[i + 1];
     start += (sc.durationInFrames || 0) - (next && next.transition ? TRANSITION_FRAMES : 0);
   });
   return (
     <>
       {events.map((e, i) => (
-        <Sequence key={i} from={e.frame} durationInFrames={45}>
-          <Audio src={staticFile('sfx/' + e.sfx + '.mp3')} />
+        <Sequence key={i} from={e.frame} durationInFrames={50}>
+          <Audio src={staticFile('sfx/' + e.sfx + '.mp3')} volume={SFX_VOL[e.sfx] ?? 0.6} />
         </Sequence>
       ))}
     </>
   );
 };
+
+// Default ambient pad — a soft Amin9 bed under the whole timeline so the video is
+// produced, not silent-with-beeps. Only used when the agent hasn't attached music.
+const MusicBed = () => <Audio src={staticFile('sfx/music.mp3')} loop volume={0.6} />;
 
 // A minimal default so Remotion Studio shows something; the real plan always
 // arrives as inputProps from lib/video.js (designbook/lib/videoplan.js output).
@@ -121,8 +141,9 @@ export const VideoFromPlan = ({ plan }: { plan: VideoPlan }) => {
       {/* cinematic vignette — subtle edge darkening so scenes don't read flat/digital */}
       <AbsoluteFill style={{ boxShadow: 'inset 0 0 320px rgba(0,0,0,0.4)', pointerEvents: 'none' }} />
       <CaptionLayer captions={p.captions} />
-      {p.sfx !== false ? <SfxLayer scenes={p.scenes} /> : null}
+      {p.sfx !== false ? <SfxLayer scenes={p.scenes} fps={p.fps} /> : null}
       <AudioBed audio={p.audio} />
+      {(!p.audio || !p.audio.music || !p.audio.music.src) && p.sfx !== false ? <MusicBed /> : null}
     </AbsoluteFill>
   );
 };

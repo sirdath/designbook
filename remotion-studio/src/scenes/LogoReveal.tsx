@@ -10,7 +10,7 @@ export const LogoReveal = ({ wordmark = 'Acme', logoSrc, tagline, theme, startFr
   const { fps } = useVideoConfig();
   const s = getSceneStyles(theme);
   const ex = exitDrift(frame, durationInFrames);
-  const scale = enterScale(frame, fps, 0.86, SPRINGS.hero, 0); // slow authoritative settle
+  const scale = enterScale(frame, fps, 0.95, SPRINGS.hero, 0); // slow authoritative settle (minimal scale)
   const a = ambient(frame, { ax: 4, ay: 5, rot: 0.25, scale: 0.008, phase: 0.3 });
   const tagA = ambient(frame, { ax: 2, ay: 3, phase: 2.4 });
   const tagG = settleGate(frame, fps, SPRINGS.soft, 16);

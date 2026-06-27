@@ -11,7 +11,7 @@ export const QuoteCard = ({ quote = 'It paid for itself in a week.', attribution
   const { fps } = useVideoConfig();
   const s = getSceneStyles(theme);
   const ex = exitDrift(frame, durationInFrames);
-  const markScale = enterScale(frame, fps, 0.5, SPRINGS.wobbly, 0); // pronounced overshoot
+  const markScale = enterScale(frame, fps, 0.84, SPRINGS.wobbly, 0); // soft overshoot, not a zoom
   const markA = ambient(frame, { ax: 3, ay: 5, rot: 0.6, phase: 0.4 });
   const attrG = settleGate(frame, fps, SPRINGS.soft, 24);
   const attrA = ambient(frame, { ax: 3, ay: 4, phase: 2.8 });

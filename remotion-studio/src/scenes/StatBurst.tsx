@@ -14,7 +14,7 @@ export const StatBurst = ({ stat = 98, suffix = '%', label = 'faster than before
   const isNum = typeof stat === 'number' || /^\d/.test(String(stat));
   // odometer count-up (eased, rushes then settles) + a snap-overshoot scale punch
   const value = countUp(frame, fps, target, 6, SPRINGS.hero);
-  const punch = enterScale(frame, fps, 0.7, SPRINGS.snap, 6); // springs PAST 1.0 then settles
+  const punch = enterScale(frame, fps, 0.88, SPRINGS.snap, 6); // gentle pop, not a zoom
   const settled = settleGate(frame, fps, SPRINGS.snap, 6);
   const a = ambient(frame, { ax: 4, ay: 6, rot: 0.3, scale: 0.006, phase: 0.4 });
   const labA = ambient(frame, { ax: 2, ay: 4, phase: 2.5 });
