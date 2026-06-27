@@ -13,7 +13,7 @@
      Verify with book_inspect facts. Spend model effort only on
      the delta the brief asks for. Save with manifest + briefId.
 
-   Tools (20):
+   Tools (26):
      orient   book_overview · book_meta
      draft    book_compose · book_variants · book_coherence · book_refine
      enrich   book_generate_image · book_save_asset · book_autofill_imagery   (anti-slop: real imagery)
@@ -21,6 +21,7 @@
      persist  book_list_pages · book_get_page · book_save_page
      export   book_export_pptx · book_lottie
      briefs   book_briefs · book_claim_brief · book_complete_brief
+     video    book_video_compose · book_video_inspect · book_video_critique · book_video_refine · book_video_render · book_video_view
    ============================================ */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -41,6 +42,7 @@ export const TOOLS = [
   'book_generate_image', 'book_save_asset', 'book_autofill_imagery',
   'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page', 'book_export_pptx', 'book_lottie',
   'book_briefs', 'book_claim_brief', 'book_complete_brief',
+  'book_video_compose', 'book_video_inspect', 'book_video_critique', 'book_video_refine', 'book_video_render', 'book_video_view',
 ];
 
 const BASE = (process.env.DESIGNBOOK_URL || 'http://localhost:4747').replace(/\/+$/, '');
@@ -326,6 +328,7 @@ const INSTRUCTIONS = [
   '4. `book_save_page` runs a save-gate that REJECTS slop — default indigo/purple gradients, Tailwind defaults, lorem, low contrast, missing reduced-motion/ARIA, failing Core Web Vitals — with one-step check→fix findings. Fix what it flags, then re-save.',
   '5. Spend effort only on the delta the request asks for — no unrequested redesigns or gold-plating.',
   '',
+  'VIDEO: to make a SaaS-style product video, the SAME loop with book_video_*: `book_video_compose({genre})` (free deterministic plan, palette-matched to the page) → set scene copy/media → `book_video_inspect` (facts) → `book_video_critique` (vision taste) → `book_video_refine` (edit the plan JSON) → `book_video_render` (MP4). Needs the remotion-studio install; tools return {skipped} otherwise.',
   'Richer, bespoke pieces: the sibling MCP `frontendmaxxing` (`search_components`, `get_snippet`, `get_palette`, `get_skill "web-excellence"`) is the full vault.',
   '',
   'If any tool returns "Design Book server unreachable", the local core server is down — start it (double-click Design Book.app, or `node server.js` in the designbook root).',
@@ -965,6 +968,124 @@ async function main() {
     const brief = r.brief || r;
     const text = `# Brief \`${id}\` → done${brief.pageSlug ? ' · page `' + brief.pageSlug + '`' : ''}${brief.summary ? '\n' + brief.summary : ''}`;
     return { content: [{ type: 'text', text }], structuredContent: { brief } };
+  }));
+
+  // ===== VIDEO (book_video_*) — the compose→critique→refine pattern, for Remotion video =====
+  const VIDEO_IN = {
+    plan: z.any().optional().describe('A full video plan from book_video_compose (preferred). Omit to compose one from genre.'),
+    genre: z.string().optional().describe('Compose a plan for this genre (saas/agency/portfolio/ecommerce/restaurant/startup/blog/landing) when no plan is given.'),
+    preset: z.string().optional().describe('Optional taste archetype (else auto-picked, brand-matched to the genre).'),
+    aspect: z.enum(['16:9', '1:1', '9:16']).optional().describe('Aspect ratio (default 16:9).'),
+    seed: z.number().optional().describe('Vary transitions/archetype deterministically.'),
+  };
+  const planBody = (a) => (a.plan ? { plan: a.plan } : { genre: a.genre, preset: a.preset, aspect: a.aspect, seed: a.seed });
+
+  server.registerTool('book_video_compose', {
+    title: 'Compose a video plan',
+    description: 'DRAFT A SAAS-STYLE VIDEO PLAN — free, instant, deterministic, no Chrome, no tokens (the book_compose of video). Emits ordered SCENES (TitleCard/FeatureCard/ScreenshotShowcase/StatBurst/LogoReveal/QuoteCard/BulletList/CTACard) with blessed frame durations + real placeholder copy + a theme whose palette tokens MATCH the page genre (brand-identical video). Then set scene props/copy/media, verify facts with book_video_inspect, taste with book_video_critique, iterate with book_video_refine, export with book_video_render. The PLAN is the single source of truth — edit the plan JSON, never React.',
+    inputSchema: VIDEO_IN,
+    outputSchema: { plan: z.any(), coherence: z.any() },
+    annotations: RO
+  }, guard(async (args) => {
+    const r = await api('POST', '/api/video-compose', planBody(args));
+    const p = r.plan, c = r.coherence || {};
+    const text = [
+      `# Video plan: ${p.genre} · ${p.aspect} · ${c.totalSeconds ?? '?'}s · coherence ${c.score ?? '?'}${c.ok ? ' ✓' : ''}`,
+      `theme: ${p.preset || '?'} (${(p.theme && p.theme.palette) || 'neutral'})`,
+      `scenes (${p.scenes.length}): ${p.scenes.map((s) => `${s.type}@${s.durationInFrames}f`).join(' → ')}`,
+      (c.findings && c.findings.length) ? `findings: ${c.findings.map((f) => f.check).join(', ')}` : '',
+      'Set scene props/copy then book_video_inspect → book_video_critique → book_video_render. Plan in structuredContent.plan.',
+    ].filter(Boolean).join('\n');
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
+  server.registerTool('book_video_inspect', {
+    title: 'Inspect a video (facts)',
+    description: 'FACTS before pixels for video: renders one representative frame per scene + returns structured facts (dimensions, fps, per-scene/total duration, render success, missing media) WITHOUT a full encode or a model call. The screenshot-killer for motion — run before book_video_critique. Needs the remotion-studio install (returns {skipped} otherwise).',
+    inputSchema: VIDEO_IN,
+    outputSchema: { ok: z.boolean().optional(), skipped: z.string().optional(), facts: z.any().optional(), coherence: z.any().optional(), scenes: z.array(z.any()).optional() },
+    annotations: RO
+  }, guard(async (args) => {
+    const r = await api('POST', '/api/video-inspect', planBody(args));
+    if (r.skipped) return { content: [{ type: 'text', text: `# Video inspect — skipped\n${r.skipped}` }], structuredContent: r };
+    const text = [
+      `# Video facts: ${r.facts.dimensions} @${r.facts.fps}fps · ${r.facts.sceneCount} scenes · ${r.facts.totalSeconds}s · coherence ${r.coherence.score}${r.coherence.ok ? ' ✓' : ' ✗'}`,
+      ...(r.scenes || []).map((s) => `- ${s.sceneId} (${s.type}) ${s.rendered ? '✓' : '✗ ' + (s.error || 'failed')}${s.missingMedia ? ' · ⚠ no media set' : ''}`),
+      (r.coherence.findings || []).length ? `findings: ${r.coherence.findings.map((f) => f.check + '(' + f.severity + ')').join(', ')}` : '',
+    ].filter(Boolean).join('\n');
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
+  server.registerTool('book_video_critique', {
+    title: 'Vision taste critique (video)',
+    description: 'The TASTE half for video: renders keyframes and a VISION model scores them against a motion/SaaS rubric (composition 35 / motion-craft 30 / originality 20 / copy 15), returning a verdict, looksAiGenerated, the signature moment, and LOCATED per-scene fixes. One vision call (compose/inspect stay free). Run before book_video_refine. Needs remotion-studio + SDK auth.',
+    inputSchema: VIDEO_IN,
+    outputSchema: { ok: z.boolean().optional(), skipped: z.string().optional(), scores: z.any().optional(), verdict: z.string().optional(), looksAiGenerated: z.boolean().optional(), signatureMoment: z.string().optional(), perScene: z.array(z.any()).optional() },
+    annotations: RO
+  }, guard(async (args) => {
+    const r = await api('POST', '/api/video-critique', planBody(args));
+    if (r.skipped) return { content: [{ type: 'text', text: `# Video critique — skipped\n${r.skipped}` }], structuredContent: r };
+    const s = r.scores || {};
+    const text = [
+      `# Video critique: ${s.total ?? '?'}/100${r.looksAiGenerated ? '  · ⚠︎ reads as AI-generated' : ''}`,
+      r.verdict ? `> ${r.verdict}` : '',
+      `**Scores** — composition ${s.composition}/35 · motion ${s.motion}/30 · originality ${s.originality}/20 · copy ${s.copy}/15`,
+      r.signatureMoment ? `\n**Signature moment:** ${r.signatureMoment}` : '',
+      (r.perScene && r.perScene.length) ? `\n**Per-scene fixes**\n${r.perScene.map((p) => `- [${p.severity}] ${p.sceneId}: ${p.observe}\n  → ${p.fix}`).join('\n')}` : '',
+    ].filter(Boolean).join('\n');
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
+  server.registerTool('book_video_refine', {
+    title: 'Refine a video plan',
+    description: 'Apply book_video_critique\'s fixes by REWRITING the plan JSON (scene props, copy, durations, order, theme) — not React. Plans are small so a full rewrite is safe + cheap. Pass `critique` (the result you just got) to skip the internal pre-critique, and/or `instruction` ("punchier opener", "add a pricing beat"). verify:true re-renders + re-critiques for a before→after delta. Returns the improved plan; then book_video_inspect and book_video_render.',
+    inputSchema: { ...VIDEO_IN, critique: z.any().optional().describe('A prior book_video_critique result (skips the internal pre-critique).'), instruction: z.string().optional().describe('Specific change to apply on top of the critique.'), verify: z.boolean().optional().describe('Re-critique for a before/after delta (default false).') },
+    outputSchema: { ok: z.boolean().optional(), skipped: z.string().optional(), plan: z.any().optional(), coherence: z.any().optional(), delta: z.number().nullable().optional() },
+    annotations: RO
+  }, guard(async (args) => {
+    const r = await api('POST', '/api/video-refine', { ...planBody(args), critique: args.critique, instruction: args.instruction, verify: args.verify });
+    if (r.skipped) return { content: [{ type: 'text', text: `# Video refine — skipped\n${r.skipped}` }], structuredContent: r };
+    const text = [
+      (r.delta != null) ? `# Video refine: ${(r.before && r.before.total) ?? '?'} → ${(r.after && r.after.total) ?? '?'}/100 (${r.delta >= 0 ? '+' : ''}${r.delta})` : '# Video refine complete',
+      r.coherence ? `coherence ${r.coherence.score}${r.coherence.ok ? ' ✓' : ''}` : '',
+      r.plan ? `scenes: ${r.plan.scenes.map((s) => s.type).join(' → ')}` : '',
+      'Improved plan in structuredContent.plan — verify with book_video_inspect, then book_video_render.',
+    ].filter(Boolean).join('\n');
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
+  server.registerTool('book_video_render', {
+    title: 'Render the video (MP4)',
+    description: 'Render the plan to a production MP4 (h264 / crf18 / yuv420p) via Remotion — deterministic, no model, just slow (~1-5× realtime; a 16s video ≈ 1-3 min). Saves the file + returns its URL; progress streams over SSE. Needs remotion-studio (returns {skipped} otherwise). Render only after the plan looks right via book_video_critique.',
+    inputSchema: { ...VIDEO_IN, slug: z.string().optional().describe('Name for the output file.') },
+    outputSchema: { ok: z.boolean().optional(), skipped: z.string().optional(), url: z.string().optional(), bytes: z.number().optional(), dimensions: z.string().optional() },
+    annotations: RW
+  }, guard(async (args) => {
+    const r = await api('POST', '/api/video-render', { ...planBody(args), slug: args.slug });
+    if (r.skipped) return { content: [{ type: 'text', text: `# Video render — skipped\n${r.skipped}` }], structuredContent: r };
+    const text = `# Rendered ✓ ${r.dimensions} · ${(r.bytes / 1e6).toFixed(1)}MB · ${r.durationFrames}f\n${r.url}`;
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
+  server.registerTool('book_video_view', {
+    title: 'View a video scene (real image)',
+    description: 'SEE a rendered keyframe as an image in this result — judge composition/taste yourself. Renders the plan and returns one scene\'s keyframe (sceneId, else the opener) inline. Use after book_video_inspect facts. Needs remotion-studio.',
+    inputSchema: { ...VIDEO_IN, sceneId: z.string().optional().describe('Which scene to view (else the first).') },
+    outputSchema: { sceneId: z.string().optional(), url: z.string().optional() },
+    annotations: RO
+  }, guard(async (args) => {
+    const r = await api('POST', '/api/video-inspect', planBody(args));
+    if (r.skipped) return { content: [{ type: 'text', text: `# Video view — skipped\n${r.skipped}` }], structuredContent: r };
+    const scenes = r.scenes || [];
+    const pick = (args.sceneId && scenes.find((s) => s.sceneId === args.sceneId)) || scenes.find((s) => s.rendered) || scenes[0];
+    const content = [{ type: 'text', text: `# Video scene: ${pick ? pick.sceneId + ' (' + pick.type + ')' : '(none)'}` }];
+    if (pick && pick.url) {
+      try {
+        const imgRes = await fetch(BASE + pick.url);
+        content.push({ type: 'image', data: Buffer.from(await imgRes.arrayBuffer()).toString('base64'), mimeType: 'image/png' });
+      } catch (e) { content.push({ type: 'text', text: `(could not load image: ${e.message})` }); }
+    }
+    return { content, structuredContent: { sceneId: pick && pick.sceneId, url: pick && pick.url } };
   }));
 
   const transport = new StdioServerTransport();
