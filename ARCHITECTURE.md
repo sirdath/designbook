@@ -237,13 +237,38 @@ right, tabs on the right.**
 class/`data-*` attributes client-side and re-set `srcdoc` — zero server calls,
 zero tokens. Composing new structure (genre/seed change) hits `/api/compose`.
 
+## Video pipeline (book_video_*)
+
+SaaS-style product videos are the page pipeline, generalized to motion. A
+deterministic **video PLAN** (`lib/videoplan.js`) is the single source of truth:
+ordered scenes (TitleCard / FeatureCard / ScreenshotShowcase / StatBurst /
+LogoReveal / QuoteCard / BulletList / CTACard) with blessed frame durations and a
+theme whose palette tokens are **the same the page genre would use** — so a site
+and its launch video are brand-identical.
+
+- **Isolation:** all of Remotion lives in `remotion-studio/` (its own
+  `package.json` + `node_modules`), so the core stays zero-build. `lib/video.js`
+  lazy-loads `@remotion/bundler` + `@remotion/renderer` by absolute path and
+  degrades to `{skipped}` when absent (the `imagegen.js`/mflux pattern). The
+  deterministic `book_video_compose` works with Remotion uninstalled.
+- **The loop (mirrors pages):** `book_video_compose` (free plan) → set scene
+  copy/media → `book_video_inspect` (`renderStill` one frame/scene → facts) →
+  `book_video_critique` (vision rubric on keyframes) → `book_video_refine`
+  (rewrite the plan JSON) → `book_video_render` (`renderMedia` → MP4) ·
+  `book_video_view` (a keyframe inline).
+- **Determinism law:** scenes animate only via `useCurrentFrame()` +
+  `interpolate(…clamp)` + `spring()` + seeded `random()` — never `Math.random` /
+  `Date.now` / CSS-animation, so the critiqued still equals the rendered frame.
+  Enforced by `videoCoherence` + the regression gate.
+- **Render facts:** a `bundle()`→serveUrl and one `openBrowser('chrome')` are
+  memoized for the server's lifetime; once warm, stills render sub-second and a
+  ~12s 1080p MP4 (h264/crf18) renders in a few seconds.
+
 ## Roadmap (post-MVP)
 
-- **Motion/video checking** (owner request, later stage): extend the viewport
-  lab with an animation mode — capture N screenshots at staggered
-  virtual-time offsets (or CDP screencast frames), diff consecutive frames to
-  produce motion facts (what moved, how far, easing curve sampling), so the
-  agent can verify animations without watching video.
+- **Video phase 2**: clone real page components into ScreenshotShowcase, audio +
+  whisper captions, `@remotion/transitions` between scenes, richer scene
+  placeholders, and page↔video asset association (`manifest.kind:'video'`).
 - **Research-driven features**: the Lovable/Replit/v0/bolt competitive research
   (research/competitive-landscape.md) feeds a ranked recommendation list;
   "now"-phase items land in the MVP, the rest queue here.
