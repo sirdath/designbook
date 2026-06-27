@@ -8,6 +8,7 @@ import { ScreenshotShowcase } from './scenes/ScreenshotShowcase';
 import { QuoteCard } from './scenes/QuoteCard';
 import { BulletList } from './scenes/BulletList';
 import { CTACard } from './scenes/CTACard';
+import { UIDemo } from './scenes/UIDemo';
 
 export const SCENE_COMPONENTS: Record<string, (props: any) => any> = {
   TitleCard,
@@ -18,4 +19,5 @@ export const SCENE_COMPONENTS: Record<string, (props: any) => any> = {
   QuoteCard,
   BulletList,
   CTACard,
+  UIDemo,
 };

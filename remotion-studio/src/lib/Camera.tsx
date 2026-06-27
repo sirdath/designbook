@@ -9,13 +9,14 @@ export type CameraMove = 'push-in' | 'pull-back' | 'pan-left' | 'pan-right' | 'o
    so cut-to-cut velocity roughly matches (continuity). */
 export const Camera = ({ move = 'push-in', dur = 90, origin = '50% 50%', children }: { move?: CameraMove; dur?: number; origin?: string; children: any }) => {
   const frame = useCurrentFrame();
-  const sc = move === 'pull-back' ? lerp(frame, [0, dur], [1.09, 1.0])
-    : move === 'orbit' ? 1.02 + 0.035 * Math.sin(frame * 0.02)
-      : lerp(frame, [0, dur], [1.0, 1.10]);
-  const dx = 8 * Math.sin(frame * 0.020)
-    + (move === 'pan-left' ? lerp(frame, [0, dur], [44, -44]) : move === 'pan-right' ? lerp(frame, [0, dur], [-44, 44]) : 0);
-  const dy = 6 * Math.cos(frame * 0.017);
-  const rot = 0.4 * Math.sin(frame * 0.013) + (move === 'orbit' ? 0.6 * Math.sin(frame * 0.02) : 0);
+  // Subtle moves — the dolly is a gentle drift, not a zoom. (Owner: "too much zoom".)
+  const sc = move === 'pull-back' ? lerp(frame, [0, dur], [1.035, 1.0])
+    : move === 'orbit' ? 1.006 + 0.010 * Math.sin(frame * 0.02)
+      : lerp(frame, [0, dur], [1.0, 1.032]);
+  const dx = 5 * Math.sin(frame * 0.018)
+    + (move === 'pan-left' ? lerp(frame, [0, dur], [26, -26]) : move === 'pan-right' ? lerp(frame, [0, dur], [-26, 26]) : 0);
+  const dy = 4 * Math.cos(frame * 0.015);
+  const rot = 0.28 * Math.sin(frame * 0.013) + (move === 'orbit' ? 0.4 * Math.sin(frame * 0.02) : 0);
   return (
     <AbsoluteFill style={{ perspective: 1400 }}>
       <AbsoluteFill style={{ transform: `scale(${sc}) translate(${dx}px, ${dy}px) rotate(${rot}deg)`, transformOrigin: origin }}>
