@@ -85,6 +85,8 @@ export const VideoFromPlan = ({ plan }: { plan: VideoPlan }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: bg }}>
       <TransitionSeries>{children}</TransitionSeries>
+      {/* cinematic vignette — subtle edge darkening so scenes don't read flat/digital */}
+      <AbsoluteFill style={{ boxShadow: 'inset 0 0 320px rgba(0,0,0,0.4)', pointerEvents: 'none' }} />
       {p.sfx !== false ? <SfxLayer scenes={p.scenes} /> : null}
     </AbsoluteFill>
   );

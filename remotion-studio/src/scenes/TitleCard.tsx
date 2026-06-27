@@ -13,6 +13,7 @@ export const TitleCard = ({ kicker, headline = 'Ship it faster.', subhead, theme
 
   return (
     <AbsoluteFill style={{ backgroundColor: s.bg, fontFamily: s.fontFamily, justifyContent: 'center', padding: s.pad }}>
+      <div style={{ width: 72, height: 6, borderRadius: 3, background: s.accent, opacity: fade(frame, 0, 10), marginBottom: kicker ? 28 : 40 }} />
       {kicker ? (
         <div style={{ color: s.accent, opacity: fade(frame, 4, 18), fontSize: 32, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 26 }}>
           {kicker}
