@@ -2,5 +2,7 @@ node_modules/
 install.log
 result.json
 verify-*
+faux-*
+render-check.mjs
 *.mp4
 out/

@@ -1,6 +1,7 @@
 import { AbsoluteFill, Img, useCurrentFrame, useVideoConfig, spring } from 'remotion';
 import { getSceneStyles, Theme } from '../lib/getSceneStyles';
 import { fade } from '../lib/anim';
+import { FauxUI } from '../lib/FauxUI';
 
 type Media = { src?: string | null; kind?: string } | null;
 type Props = { headline?: string; body?: string; media?: Media; theme?: Theme };
@@ -23,7 +24,7 @@ export const FeatureCard = ({ headline = 'Built for momentum', body = 'Everythin
           {hasMedia ? (
             <Img src={media!.src as string} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            <div style={{ width: '70%', height: '60%', borderRadius: Math.max(8, s.radius - 6), background: `linear-gradient(135deg, ${s.accent}33, ${s.accent}0a)`, border: `1px solid ${s.accent}40` }} />
+            <FauxUI theme={theme} />
           )}
         </div>
       </div>

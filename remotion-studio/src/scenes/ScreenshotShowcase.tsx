@@ -1,6 +1,7 @@
 import { AbsoluteFill, Img, useCurrentFrame, useVideoConfig, spring } from 'remotion';
 import { getSceneStyles, Theme } from '../lib/getSceneStyles';
 import { fade, lerp } from '../lib/anim';
+import { FauxUI } from '../lib/FauxUI';
 
 type Media = { src?: string | null; deviceFrame?: 'browser' | 'phone' };
 type Props = { caption?: string; media?: Media; cursorPath?: null; theme?: Theme };
@@ -41,8 +42,8 @@ export const ScreenshotShowcase = ({ caption, media, theme }: Props) => {
             {src ? (
               <Img src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${zoom})` }} />
             ) : (
-              <div style={{ width: '100%', height: '100%', transform: `scale(${zoom})`, background: `radial-gradient(120% 120% at 30% 20%, ${s.accent}2e, ${s.bg})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ width: '64%', height: '52%', borderRadius: 16, background: 'rgba(255,255,255,0.05)', border: `1px solid ${s.accent}40` }} />
+              <div style={{ width: '100%', height: '100%', transform: `scale(${zoom})` }}>
+                <FauxUI theme={theme} />
               </div>
             )}
           </div>
