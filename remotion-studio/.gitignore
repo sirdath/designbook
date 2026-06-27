@@ -3,6 +3,7 @@ install.log
 result.json
 verify-*
 faux-*
+tr-*
 render-check.mjs
 *.mp4
 out/
