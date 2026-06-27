@@ -126,7 +126,8 @@ Body: `{ plan | genre | pageSlug, mp4Path?, vision? }` — the video equivalent 
 inspect+critique. Renders the plan (or analyzes a given `mp4Path`) and fuses
 **deterministic motion + audio + structure** analysis with an optional per-scene
 vision critique into one scored report.
-→ `{ score, verdict:"ship"|"iterate", scenes:[{type, frames, motion, audio, vision, findings[]}], motionArc, loudnessArc, durationArc, pacing, audio, findingCount, topFix, visionStatus }`
+→ `{ ok, score, verdict:"ship"|"iterate", visionStatus, scenes:[{ sceneId, type, frames, from, to, motion, audio, structure, vision, findings[] }], globalFindings[], global, instruments }`
+  where each `scene.motion` = `{ mean, cv, pattern:"sustained"|"front-loaded"|"calm-hold"|"frozen"|"chaotic", frozenSpans, lowMotionSpans, thirds, verdict }`, and `global` carries the motion/loudness/duration arcs, pacing, and the `topFix` summary.
 - **motion**: per-scene frame-to-frame energy → `frozen`/`front-loaded`/`sustained`/`calm-hold`/`chaotic` + frozen spans (catches the PowerPoint tell numerically).
 - **audio**: loudness/LUFS, dead-air spans, SFX-event→cut alignment, music-bed presence.
 - **structure**: blessed durations, pacing rhythm, transition coverage, UIDemo interaction-completeness (typing finishes before select, click before scene end).
