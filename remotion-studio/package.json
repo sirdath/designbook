@@ -1,0 +1,24 @@
+{
+  "name": "designbook-remotion-studio",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Isolated Remotion sub-project for Design Book's book_video_* pipeline. Kept separate (own package.json + node_modules) so the designbook core stays zero-build / minimal-dep. lib/video.js lazy-imports @remotion/bundler + @remotion/renderer from here by absolute path; renders a video PLAN (designbook/lib/videoplan.js) to stills (facts) and MP4.",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.484",
+    "@remotion/renderer": "4.0.484",
+    "@remotion/transitions": "4.0.484",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.484"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "typescript": "5.6.3"
+  }
+}

@@ -18,6 +18,8 @@ import { inspect, VIEWPORTS, DEFAULT_VIEWPORTS } from './lib/inspect.js';
 import { critique } from './lib/critique.js';
 import { refine, shouldPatch } from './lib/refine.js';
 import { defaultArchetype } from './lib/archetypes.js';
+import { composeVideoPlan, videoCoherence } from './lib/videoplan.js';
+import * as videoEngine from './lib/video.js';
 import { parseIntent } from './lib/intent.js';
 import { zipStore } from './lib/zip.js';
 import { buildFlowHandoff, isMobileHtml } from './lib/handoff.js';
@@ -120,6 +122,29 @@ async function main() {
     const { html, fixed } = autofix(r.html);
     const c = vault.coherence(html);
     return { platform: 'web', html, theme: r.theme, sections: r.sections, warnings: r.warnings, autofixed: fixed, coherence: { score: c.score, counts: c.counts, authenticity: c.authenticity } };
+  }
+
+  // The book_video_compose scorer: resolve a brand-matched theme from the vault
+  // (the SAME palette tokens as the page genre) and emit a deterministic plan.
+  function composeVideoWithScore(body) {
+    const genre = body.genre;
+    const seed = body.seed;
+    let preset = body.preset;
+    if (!preset && !body.palette && !body.aesthetic) preset = defaultArchetype(genre, seed);
+    const presetDef = (vault.presets.presets || []).find((p) => p.name === preset) || null;
+    const paletteName = body.palette || (presetDef && presetDef.palette) || null;
+    const pal = paletteName ? vault.palettes.find((p) => p.name === paletteName) : null;
+    const tk = pal && pal.tokens;
+    const theme = {
+      preset: preset || null,
+      palette: paletteName,
+      aesthetic: body.aesthetic || (presetDef && presetDef.aesthetic) || null,
+      fontPair: (presetDef && presetDef.fontPair) || null,
+      tokens: tk ? { bg: tk.bg, ink: tk.fg, accent: tk.accent, muted: tk.muted } : undefined,
+    };
+    const plan = composeVideoPlan({ genre, preset, aspect: body.aspect, seed, theme });
+    const coh = videoCoherence(plan);
+    return { plan, coherence: { score: coh.score, ok: coh.ok, findings: coh.findings, totalSeconds: coh.totalSeconds } };
   }
 
   const server = createServer(async (req, res) => {
@@ -620,6 +645,37 @@ async function main() {
           patch: typeof body.patch === 'boolean' ? body.patch : shouldPatch(html, body.instruction),
           vaultRoot: vault.root, bookDir: book.dir, shotsDir: book.shotsDir, model,
         });
+        if (out.error) return err(res, /auth/i.test(out.error) ? 503 : 500, out.error);
+        return send(res, 200, out);
+      }
+
+      // ===== VIDEO (book_video_*) — the page pipeline generalized to Remotion.
+      // A plan is the FREE deterministic draft; render/critique/refine need the
+      // isolated remotion-studio/ install (degrades to {skipped} when absent). =====
+      if (path === '/api/video-compose' && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.genre && !(body.plan && body.plan.scenes)) return err(res, 400, 'genre or plan required');
+        return send(res, 200, body.plan && body.plan.scenes ? { plan: body.plan, coherence: videoCoherence(body.plan) } : composeVideoWithScore(body));
+      }
+      if (path === '/api/video-render' && method === 'GET') {
+        return send(res, 200, { available: videoEngine.findRemotion().available });
+      }
+      if ((path === '/api/video-inspect' || path === '/api/video-critique' || path === '/api/video-refine' || path === '/api/video-render') && method === 'POST') {
+        const body = await readBody(req);
+        if (!body.plan && !body.genre) return err(res, 400, 'plan or genre required');
+        const plan = body.plan && body.plan.scenes ? body.plan : composeVideoWithScore(body).plan;
+        const model = (book.getSettings().sdk || {}).model || 'claude-sonnet-4-6';
+        let out;
+        if (path === '/api/video-inspect') out = await videoEngine.inspectVideo({ plan, shotsDir: book.shotsDir });
+        else if (path === '/api/video-critique') out = await videoEngine.critiqueVideo({ plan, shotsDir: book.shotsDir, model });
+        else if (path === '/api/video-refine') out = await videoEngine.refineVideo({ plan, critique: body.critique, instruction: body.instruction, verify: body.verify === true, shotsDir: book.shotsDir, model });
+        else { // /api/video-render
+          const slug = body.slug ? slugify(body.slug) : 'video';
+          const outPath = book.shotsDir + '/' + slug + '-' + String(plan.aspect).replace(':', 'x') + '.mp4';
+          out = await videoEngine.renderVideo({ plan, outPath, onProgress: (p) => broadcast({ type: 'video-render', slug, progress: Math.round(p * 100) }) });
+          if (out.ok) out = { ok: true, slug, url: '/book/shots/' + out.path.split('/').pop(), bytes: out.bytes, durationFrames: out.durationFrames, dimensions: out.dimensions };
+        }
+        if (out.skipped) return send(res, 200, out);
         if (out.error) return err(res, /auth/i.test(out.error) ? 503 : 500, out.error);
         return send(res, 200, out);
       }
