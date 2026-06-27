@@ -21,6 +21,7 @@
 import { loadVault } from '../lib/vault.js';
 import { antiSlop } from '../lib/anti-slop.js';
 import { defaultArchetype } from '../lib/archetypes.js';
+import { composeVideoPlan, videoCoherence, VIDEO_GENRES } from '../lib/videoplan.js';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -88,5 +89,19 @@ for (const c of current) {
   const stat = c.error ? '  —' : `${String(c.coherence).padStart(3)}${b ? ` (was ${b.coherence})` : ''}`;
   console.log(`${mark} ${c.key.padEnd(13)} ${stat.padEnd(13)} ${c.error ? '' : String(c.slopHigh).padStart(2)}    ${c.error ? '' : `${c.palette}/${c.aesthetic}`}${issues.length ? `   ⚠ ${issues.join('; ')}` : ''}`);
 }
-console.log(failures ? `\n✗ REGRESSION: ${failures} golden page(s) got worse` : `\n✓ OK: ${current.length} golden pages, no regressions`);
+// ---- video plan goldens: deterministic + coherent + CTA-close (the determinism law) ----
+console.log('\n  video plan      scenes  dur    coherence');
+for (const genre of VIDEO_GENRES) {
+  const p1 = composeVideoPlan({ genre }), p2 = composeVideoPlan({ genre });
+  const coh = videoCoherence(p1);
+  const issues = [];
+  if (JSON.stringify(p1) !== JSON.stringify(p2)) issues.push('NON-DETERMINISTIC');
+  if (!coh.ok) issues.push('coherence ' + coh.score);
+  if (p1.scenes[p1.scenes.length - 1].type !== 'CTACard') issues.push('no CTA close');
+  if (p1.scenes.length < 3) issues.push('too few scenes');
+  if (issues.length) failures++;
+  console.log(`${issues.length ? '✗' : '✓'} ${genre.padEnd(13)} ${String(p1.scenes.length).padStart(5)}   ${(coh.totalSeconds + 's').padStart(5)}   ${String(coh.score).padStart(3)}${issues.length ? '   ⚠ ' + issues.join('; ') : ''}`);
+}
+
+console.log(failures ? `\n✗ REGRESSION: ${failures} failure(s)` : `\n✓ OK: ${current.length} golden pages + ${VIDEO_GENRES.length} video plans, no regressions`);
 process.exit(failures ? 1 : 0);
