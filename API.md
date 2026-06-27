@@ -121,8 +121,16 @@ product-showcase scene. → `{ plan, coherence }`
 ### `POST /api/video-render` — `{ plan | genre | pageSlug }` → `{ ok, slug, url, bytes, durationFrames, dimensions }` (mp4 at `/book/shots/...`). Streams progress on SSE (`{type:'video-render', slug, progress}`).
 ### `GET /api/video-render` — `{ available }` (is the Remotion install present).
 
-> A structured **`/api/video-diagnose`** (deterministic motion + audio + structure +
-> per-scene vision → one scored report) is in active development and will land here.
+### `POST /api/video-diagnose` *(deterministic core free; vision optional)*
+Body: `{ plan | genre | pageSlug, mp4Path?, vision? }` — the video equivalent of
+inspect+critique. Renders the plan (or analyzes a given `mp4Path`) and fuses
+**deterministic motion + audio + structure** analysis with an optional per-scene
+vision critique into one scored report.
+→ `{ score, verdict:"ship"|"iterate", scenes:[{type, frames, motion, audio, vision, findings[]}], motionArc, loudnessArc, durationArc, pacing, audio, findingCount, topFix, visionStatus }`
+- **motion**: per-scene frame-to-frame energy → `frozen`/`front-loaded`/`sustained`/`calm-hold`/`chaotic` + frozen spans (catches the PowerPoint tell numerically).
+- **audio**: loudness/LUFS, dead-air spans, SFX-event→cut alignment, music-bed presence.
+- **structure**: blessed durations, pacing rhythm, transition coverage, UIDemo interaction-completeness (typing finishes before select, click before scene end).
+- The deterministic report is valid even with no model (`vision:false` or no credential → `visionStatus:"skipped:…"`, vision adds zero penalty). Powers the **render → diagnose → fix → re-diagnose** loop; `book_video_diagnose` exposes the same on the MCP surface.
 
 ---
 

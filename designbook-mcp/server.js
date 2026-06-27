@@ -21,7 +21,7 @@
      persist  book_list_pages · book_get_page · book_save_page
      export   book_export_pptx · book_lottie
      briefs   book_briefs · book_claim_brief · book_complete_brief
-     video    book_video_compose · book_video_inspect · book_video_critique · book_video_refine · book_video_render · book_video_view
+     video    book_video_compose · book_video_inspect · book_video_critique · book_video_diagnose · book_video_refine · book_video_render · book_video_view
    ============================================ */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -42,7 +42,7 @@ export const TOOLS = [
   'book_generate_image', 'book_save_asset', 'book_autofill_imagery',
   'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page', 'book_export_pptx', 'book_lottie',
   'book_briefs', 'book_claim_brief', 'book_complete_brief',
-  'book_video_compose', 'book_video_inspect', 'book_video_critique', 'book_video_refine', 'book_video_render', 'book_video_view',
+  'book_video_compose', 'book_video_inspect', 'book_video_critique', 'book_video_diagnose', 'book_video_refine', 'book_video_render', 'book_video_view',
 ];
 
 const BASE = (process.env.DESIGNBOOK_URL || 'http://localhost:4747').replace(/\/+$/, '');
@@ -337,7 +337,7 @@ const INSTRUCTIONS = [
   '4. `book_save_page` runs a save-gate that REJECTS slop — default indigo/purple gradients, Tailwind defaults, lorem, low contrast, missing reduced-motion/ARIA, failing Core Web Vitals — with one-step check→fix findings. Fix what it flags, then re-save.',
   '5. Spend effort only on the delta the request asks for — no unrequested redesigns or gold-plating.',
   '',
-  'VIDEO: to make a SaaS-style product video, the SAME loop with book_video_*: `book_video_compose({genre})` (free deterministic plan, palette-matched to the page) → set scene copy/media → `book_video_inspect` (facts) → `book_video_critique` (vision taste) → `book_video_refine` (edit the plan JSON) → `book_video_render` (MP4). Needs the remotion-studio install; tools return {skipped} otherwise.',
+  'VIDEO: to make a SaaS-style product video, the SAME loop with book_video_*: `book_video_compose({genre})` (free deterministic plan, palette-matched to the page) → set scene copy/media → `book_video_inspect` (facts) → `book_video_critique` (vision taste) → `book_video_render` (MP4) → `book_video_diagnose` (the temporal/audio MOAT: per-frame motion, dead-air/SFX, structure + per-scene vision, fused into a scored verdict that catches PowerPoint-frozen/too-zoomy/goofy-sound) → `book_video_refine` (edit the plan JSON to fix the diagnosed findings) → re-render → re-diagnose. Needs the remotion-studio install; tools return {skipped} otherwise.',
   'Richer, bespoke pieces: the sibling MCP `frontendmaxxing` (`search_components`, `get_snippet`, `get_palette`, `get_skill "web-excellence"`) is the full vault.',
   '',
   'If any tool returns "Design Book server unreachable", the local core server is down — start it (double-click Design Book.app, or `node server.js` in the designbook root).',
@@ -1046,9 +1046,35 @@ async function main() {
     return { content: [{ type: 'text', text }], structuredContent: r };
   }));
 
+  server.registerTool('book_video_diagnose', {
+    title: 'Diagnose a rendered video (temporal/audio MOAT)',
+    description: 'The render→diagnose→fix→re-diagnose loop for video — the temporal/audio equivalent of the page diagnose. Runs THREE deterministic instruments over a rendered MP4 + the plan: MOTION (per-frame frame-difference → frozen / front-loaded / sustained / chaotic / calm-hold — catches the PowerPoint-frozen + too-zoomy tells a still is blind to), AUDIO (loudness timeline, dead-air, SFX-event→cut alignment, music-bed presence — catches goofy/missing sound), STRUCTURE (blessed durations, pacing rhythm, transition coverage, UIDemo interaction-completeness). It then OPTIONALLY fuses a per-scene VISION critique (feeds the model the measured flags so it adjudicates them, not guesses) and emits ONE scored 0-100, per-scene, actionable report with verdict ship|iterate. Deterministic axes ALWAYS work (vision degrades gracefully when throttled/unauthed — visionStatus says why). Pass mp4Path to analyze an existing render, else it renders the plan first. Feed each finding\'s fix to book_video_refine. Needs remotion-studio (+ ffmpeg on PATH).',
+    inputSchema: { ...VIDEO_IN, mp4Path: z.string().optional().describe('Analyze this already-rendered MP4 (else the plan is rendered to a temp file first).'), vision: z.boolean().optional().describe('Set false to skip the perceptual axis (deterministic-only, no model call).') },
+    outputSchema: { ok: z.boolean().optional(), skipped: z.string().optional(), score: z.number().optional(), verdict: z.string().optional(), visionStatus: z.string().optional(), scenes: z.array(z.any()).optional(), global: z.any().optional() },
+    annotations: RO
+  }, guard(async (args) => {
+    const r = await api('POST', '/api/video-diagnose', { ...planBody(args), mp4Path: args.mp4Path, vision: args.vision });
+    if (r.skipped) return { content: [{ type: 'text', text: `# Video diagnose — skipped\n${r.skipped}` }], structuredContent: r };
+    const g = r.global || {};
+    const allFind = (r.scenes || []).flatMap((s) => (s.findings || []).map((f) => ({ ...f, sceneId: s.sceneId, type: s.type }))).concat(r.globalFindings || []);
+    const sevRank = { high: 0, med: 1, soft: 2, low: 3 };
+    const top = allFind.slice().sort((a, b) => (sevRank[a.severity] ?? 4) - (sevRank[b.severity] ?? 4)).slice(0, 8);
+    const text = [
+      `# Video diagnose: ${r.score}/100 · ${r.verdict === 'ship' ? '✓ ship' : '⟳ iterate'}  (vision: ${r.visionStatus})`,
+      g.motionArc ? `motion  ${g.motionArc}` : '',
+      g.loudnessArc ? `loud    ${g.loudnessArc}` : '',
+      g.durationArc ? `dur     ${g.durationArc}  ·  pacing ${g.pacing ? g.pacing.verdict : '?'}` : '',
+      g.audio ? `audio   ${g.audio.hasAudio ? `bed ${g.audio.bed ? g.audio.bed.medianRmsDb + 'dB' : '?'} · sfx ${g.audio.sfxPresent ?? '?'} ok / ${g.audio.sfxMissing ?? 0} missing / ${g.audio.sfxMisaligned ?? 0} off` : 'NO AUDIO TRACK'}` : '',
+      g.findingCount ? `findings: ${g.findingCount.high} high · ${g.findingCount.med} med · ${g.findingCount.soft} soft · ${g.findingCount.low} low` : '',
+      top.length ? `\n**Top findings**\n${top.map((f) => `- [${f.severity}/${f.dim}] ${f.type ? f.type + ' ' : ''}${Array.isArray(f.range) ? `f${f.range[0]}-${f.range[1]}` : ''}: ${f.issue}\n  → ${f.fix}`).join('\n')}` : '\nNo defects — clean across motion/audio/structure.',
+      `\nFeed a finding's fix to book_video_refine, re-render, then re-diagnose.`,
+    ].filter(Boolean).join('\n');
+    return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
   server.registerTool('book_video_refine', {
     title: 'Refine a video plan',
-    description: 'Apply book_video_critique\'s fixes by REWRITING the plan JSON (scene props, copy, durations, order, theme) — not React. Plans are small so a full rewrite is safe + cheap. Pass `critique` (the result you just got) to skip the internal pre-critique, and/or `instruction` ("punchier opener", "add a pricing beat"). verify:true re-renders + re-critiques for a before→after delta. Returns the improved plan; then book_video_inspect and book_video_render.',
+    description: 'Apply book_video_critique\'s OR book_video_diagnose\'s fixes by REWRITING the plan JSON (scene props, copy, durations, order, theme) — not React. Plans are small so a full rewrite is safe + cheap. Pass `critique` (the result you just got) to skip the internal pre-critique, and/or `instruction` ("punchier opener", "add a pricing beat", or a diagnose finding\'s fix like "lengthen UIDemo so the success state isn\'t cut off"). verify:true re-renders + re-critiques for a before→after delta. Returns the improved plan; then book_video_render and book_video_diagnose again to confirm the temporal/audio defects are gone.',
     inputSchema: { ...VIDEO_IN, critique: z.any().optional().describe('A prior book_video_critique result (skips the internal pre-critique).'), instruction: z.string().optional().describe('Specific change to apply on top of the critique.'), verify: z.boolean().optional().describe('Re-critique for a before/after delta (default false).') },
     outputSchema: { ok: z.boolean().optional(), skipped: z.string().optional(), plan: z.any().optional(), coherence: z.any().optional(), delta: z.number().nullable().optional() },
     annotations: RO
