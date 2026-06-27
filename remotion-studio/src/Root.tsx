@@ -95,6 +95,7 @@ export const VideoFromPlan = ({ plan }: { plan: VideoPlan }) => {
   const p = plan && plan.scenes ? plan : DEFAULT_PLAN;
   const bg = (p.theme && p.theme.tokens && p.theme.tokens.bg) || '#0b0b0f';
   const children: any[] = [];
+  let start = 0; // global frame offset (with transition overlaps) — for LivingBackground continuity
   p.scenes.forEach((sc, i) => {
     const Comp = SCENE_COMPONENTS[sc.type] || SCENE_COMPONENTS.TitleCard;
     if (i > 0 && sc.transition) {
@@ -108,9 +109,11 @@ export const VideoFromPlan = ({ plan }: { plan: VideoPlan }) => {
     }
     children.push(
       <TransitionSeries.Sequence key={sc.id} durationInFrames={Math.max(1, sc.durationInFrames)}>
-        <Comp {...sc.props} theme={p.theme} />
+        <Comp {...sc.props} theme={p.theme} startFrame={start} durationInFrames={sc.durationInFrames} />
       </TransitionSeries.Sequence>
     );
+    const next = p.scenes[i + 1];
+    start += (sc.durationInFrames || 0) - (next && next.transition ? TRANSITION_FRAMES : 0);
   });
   return (
     <AbsoluteFill style={{ backgroundColor: bg }}>
