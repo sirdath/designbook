@@ -34,6 +34,10 @@ the submodule pin.
 
 No build step, no required dependencies for the core — vanilla ESM on `node:http`.
 
+**Building a UI?** See [`API.md`](API.md) — the full HTTP API contract (every endpoint,
+request/response shape, and suggested flows). The UI is just a client of the `:4747`
+REST API + the `/api/events` SSE stream; a reference shell lives in [`ui/`](ui/).
+
 Run the test suite (server should be running for the vault checks):
 
 ```sh
