@@ -70,7 +70,7 @@ const SfxLayer = ({ scenes, fps = 30 }: { scenes: Scene[]; fps?: number }) => {
     if (sc.type === 'UIDemo') {
       const q = String((sc.props && sc.props.query) || 'Active users');
       const typeStart = 22, cps = 13, selectAt = 70, clickAt = 104;
-      for (let c = 0; c < q.length; c++) {
+      for (let c = 0; c < q.length; c += 2) { // every other char — restraint, not a typewriter clatter
         if (q[c] === ' ') continue;
         events.push({ frame: start + Math.round(typeStart + (c / cps) * fps), sfx: 'key' });
       }
