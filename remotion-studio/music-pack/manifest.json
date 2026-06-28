@@ -1,0 +1,21 @@
+{
+  "library": "designbook-music-beds",
+  "purpose": "Background music beds for SaaS-style videos (the MusicBed under the SFX).",
+  "license": {
+    "name": "Mixkit Free License",
+    "url": "https://mixkit.co/license/#musicFree",
+    "summary": "Free to use in your videos (personal + commercial), no attribution, no signup. You MAY NOT redistribute the raw audio files standalone or make them downloadable — so these mp3s are gitignored, not committed. Re-fetch with `node fetch.mjs`.",
+    "committableRawFiles": false
+  },
+  "source": "mixkit.co/free-stock-music",
+  "beds": [
+    { "name": "digital-clouds",  "file": "mixkit-digital-clouds.mp3",  "mixkitId": 175,  "genre": "Chillout",        "durationSec": 101, "mood": "tech-chill, modern, gentle — strongest SaaS fit", "url": "https://assets.mixkit.co/music/175/175.mp3" },
+    { "name": "other-world",     "file": "mixkit-other-world.mp3",     "mixkitId": 723,  "genre": "Electronica",     "durationSec": 95,  "mood": "modern electronic, airy",                       "url": "https://assets.mixkit.co/music/723/723.mp3" },
+    { "name": "tides-turning",   "file": "mixkit-tides-turning.mp3",   "mixkitId": 439,  "genre": "Electropop",      "durationSec": 120, "mood": "gentle forward motion, optimistic",             "url": "https://assets.mixkit.co/music/439/439.mp3" },
+    { "name": "close-up",        "file": "mixkit-close-up.mp3",        "mixkitId": 1167, "genre": "Corporate Music", "durationSec": 95,  "mood": "clean corporate, confident",                    "url": "https://assets.mixkit.co/music/1167/1167.mp3" },
+    { "name": "serene-moments",  "file": "mixkit-serene-moments.mp3",  "mixkitId": 27,   "genre": "Chillout",        "durationSec": 119, "mood": "calm, soft, unobtrusive",                       "url": "https://assets.mixkit.co/music/27/27.mp3" },
+    { "name": "valley-sunset",   "file": "mixkit-valley-sunset.mp3",   "mixkitId": 127,  "genre": "Ambient",         "durationSec": 134, "mood": "warm ambient, slow",                            "url": "https://assets.mixkit.co/music/127/127.mp3" }
+  ],
+  "currentBed": "digital-clouds",
+  "note": "The committed default MusicBed (public/sfx/music.mp3) is a synth pad (CC-clean). `node set-bed.mjs <name>` ducks a bed from here into public/sfx/music.mp3 locally for renders."
+}
