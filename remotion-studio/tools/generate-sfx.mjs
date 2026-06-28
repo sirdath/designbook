@@ -8,7 +8,10 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 const SR = 44100, TAU = Math.PI * 2;
-const OUT = path.resolve(process.cwd(), 'public/sfx');
+// Writes the procedural fallback set to synth-pack/ (catalogued in the sound library).
+// NOT public/sfx/ — that now holds the real owner-supplied pack; regenerating here
+// must never clobber it. To use a synth sound in a video, copy it into public/sfx/.
+const OUT = path.resolve(process.cwd(), 'synth-pack');
 mkdirSync(OUT, { recursive: true });
 
 const buf = (sec) => new Float32Array(Math.ceil(sec * SR));
