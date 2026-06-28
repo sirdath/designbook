@@ -2,6 +2,7 @@ import { useCurrentFrame, useVideoConfig } from 'remotion';
 import { getSceneStyles, Theme } from '../lib/getSceneStyles';
 import { SceneFrame } from '../lib/SceneFrame';
 import { Odometer } from '../lib/Odometer';
+import { Scramble } from '../lib/Scramble';
 import { fade, enterScale, settleGate, ambient, exitDrift, SPRINGS } from '../lib/anim';
 
 type Props = { stat?: number | string; suffix?: string; label?: string; theme?: Theme; startFrame?: number; durationInFrames?: number };
@@ -39,7 +40,7 @@ export const StatBurst = ({ stat = 98, suffix = '%', label = 'faster than before
             )}
           </div>
         </div>
-        <div style={{ color: s.muted, opacity: fade(frame, 18, 32) * (1 - ex.k), fontSize: 56, fontWeight: 500, marginTop: 26, maxWidth: 1200, transform: `translate(${labA.x * labG}px, ${(1 - labG) * 24 + labA.y * labG}px)` }}>{label}</div>
+        <div style={{ color: s.muted, opacity: 1 - ex.k, fontSize: 56, fontWeight: 500, marginTop: 26, maxWidth: 1200, transform: `translate(${labA.x * labG}px, ${(1 - labG) * 24 + labA.y * labG}px)` }}><Scramble text={label} startFrame={20} perChar={1} scrambleColor={s.accent} /></div>
       </div>
     </SceneFrame>
   );

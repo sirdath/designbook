@@ -2,6 +2,7 @@ import { useCurrentFrame, useVideoConfig } from 'remotion';
 import { getSceneStyles, Theme } from '../lib/getSceneStyles';
 import { SceneFrame } from '../lib/SceneFrame';
 import { KineticText } from '../lib/KineticText';
+import { DrawUnderline } from '../lib/DrawUnderline';
 import { fade, enterScale, settleGate, ambient, exitDrift, SPRINGS } from '../lib/anim';
 
 type Props = { headline?: string; buttonLabel?: string; urlText?: string; theme?: Theme; startFrame?: number; durationInFrames?: number };
@@ -20,7 +21,10 @@ export const CTACard = ({ headline = 'Start building today', buttonLabel = 'Get 
   return (
     <SceneFrame theme={theme} move="push-in" origin="50% 50%" dur={durationInFrames} startFrame={startFrame}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', transform: `translateY(${ex.y}px)`, opacity: ex.opacity, fontFamily: s.fontFamily }}>
-        <KineticText text={headline} base={3} step={5} dist={70} style={{ color: s.ink, fontSize: 104, fontWeight: s.displayWeight, lineHeight: 1.0, letterSpacing: '-0.02em', maxWidth: 1400 }} />
+        <div style={{ position: 'relative', display: 'inline-block' }}>
+          <KineticText text={headline} base={3} step={5} dist={70} split="char" style={{ display: 'inline-block', color: s.ink, fontSize: 104, fontWeight: s.displayWeight, lineHeight: 1.0, letterSpacing: '-0.02em', maxWidth: 1400 }} />
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: -10 }}><DrawUnderline color={s.accent} startFrame={26} dur={16} strokeWidth={8} /></div>
+        </div>
         <div style={{ marginTop: 56, transform: `scale(${btnScale * btnA.sc}) translateY(${btnA.y}px)`, opacity: fade(frame, 10, 22) }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', height: 96, padding: '0 56px', borderRadius: s.radius === 0 ? 0 : 9999, background: s.accent, color: s.bg, fontSize: 40, fontWeight: 700, border: s.border, boxShadow: `0 24px 60px ${s.accent}44` }}>
             {buttonLabel}
