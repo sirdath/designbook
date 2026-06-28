@@ -682,7 +682,7 @@ async function main() {
       if (path === '/api/video-render' && method === 'GET') {
         return send(res, 200, { available: videoEngine.findRemotion().available });
       }
-      if ((path === '/api/video-inspect' || path === '/api/video-critique' || path === '/api/video-refine' || path === '/api/video-render' || path === '/api/video-diagnose') && method === 'POST') {
+      if ((path === '/api/video-inspect' || path === '/api/video-critique' || path === '/api/video-refine' || path === '/api/video-render' || path === '/api/video-diagnose' || path === '/api/video-frames') && method === 'POST') {
         const body = await readBody(req);
         if (!body.plan && !body.genre && !body.pageSlug) return err(res, 400, 'plan, genre, or pageSlug required');
         const plan = body.plan && body.plan.scenes ? body.plan : (await composeVideoWithScore(body)).plan;
@@ -691,6 +691,7 @@ async function main() {
         if (path === '/api/video-inspect') out = await videoEngine.inspectVideo({ plan, shotsDir: book.shotsDir });
         else if (path === '/api/video-critique') out = await videoEngine.critiqueVideo({ plan, shotsDir: book.shotsDir, model });
         else if (path === '/api/video-diagnose') out = await videoEngine.diagnoseVideo({ plan, mp4Path: body.mp4Path, shotsDir: book.shotsDir, model, vision: body.vision });
+        else if (path === '/api/video-frames') out = await videoEngine.videoFrames({ plan, frames: body.frames, at: body.at, count: body.count, cols: body.cols, width: body.width, shotsDir: book.shotsDir });
         else if (path === '/api/video-refine') out = await videoEngine.refineVideo({ plan, critique: body.critique, instruction: body.instruction, verify: body.verify === true, shotsDir: book.shotsDir, model });
         else { // /api/video-render
           const slug = body.slug ? slugify(body.slug) : 'video';

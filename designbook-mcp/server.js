@@ -21,7 +21,7 @@
      persist  book_list_pages · book_get_page · book_save_page
      export   book_export_pptx · book_lottie
      briefs   book_briefs · book_claim_brief · book_complete_brief
-     video    book_video_compose · book_video_inspect · book_video_critique · book_video_diagnose · book_video_refine · book_video_render · book_video_view
+     video    book_video_compose · book_video_inspect · book_video_critique · book_video_diagnose · book_video_frames · book_video_refine · book_video_render · book_video_view
    ============================================ */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -42,7 +42,7 @@ export const TOOLS = [
   'book_generate_image', 'book_save_asset', 'book_autofill_imagery',
   'book_inspect', 'book_view', 'book_list_pages', 'book_get_page', 'book_save_page', 'book_export_pptx', 'book_lottie',
   'book_briefs', 'book_claim_brief', 'book_complete_brief',
-  'book_video_compose', 'book_video_inspect', 'book_video_critique', 'book_video_diagnose', 'book_video_refine', 'book_video_render', 'book_video_view',
+  'book_video_compose', 'book_video_inspect', 'book_video_critique', 'book_video_diagnose', 'book_video_frames', 'book_video_refine', 'book_video_render', 'book_video_view',
 ];
 
 const BASE = (process.env.DESIGNBOOK_URL || 'http://localhost:4747').replace(/\/+$/, '');
@@ -1070,6 +1070,31 @@ async function main() {
       `\nFeed a finding's fix to book_video_refine, re-render, then re-diagnose.`,
     ].filter(Boolean).join('\n');
     return { content: [{ type: 'text', text }], structuredContent: r };
+  }));
+
+  server.registerTool('book_video_frames', {
+    title: 'Frame a video (contact sheet for the eyes)',
+    description: 'Hand THIS session the actual frames of a video to eyeball — renders a set of stills and returns ONE labeled contact-sheet image (each tile stamped f<n> + timestamp). Pick frames with `at`: "arc" (default — evenly-spaced across the whole video, the at-a-glance overview), "transitions" (frames before/at/after each cut), "scene-starts" (entry + mid of each scene), or pass explicit `frames:[12,38,64]`. The visual companion to book_video_diagnose: diagnose says WHERE a defect is (e.g. frozen f340-381), this shows you WHAT it looks like there. Needs remotion-studio (+ ffmpeg/ImageMagick on PATH).',
+    inputSchema: { ...VIDEO_IN,
+      frames: z.array(z.number()).optional().describe('Explicit frame numbers to grab (overrides `at`).'),
+      at: z.enum(['arc', 'transitions', 'scene-starts']).optional().describe('How to pick frames when `frames` is omitted (default "arc").'),
+      count: z.number().optional().describe('How many frames for at:"arc" (default 12, max 24).'),
+      cols: z.number().optional().describe('Contact-sheet columns (default 4).') },
+    outputSchema: { ok: z.boolean().optional(), skipped: z.string().optional(), totalFrames: z.number().optional(), at: z.string().optional(), frames: z.array(z.any()).optional(), sheet: z.any().optional() },
+    annotations: RO
+  }, guard(async (args) => {
+    const r = await api('POST', '/api/video-frames', { ...planBody(args), frames: args.frames, at: args.at, count: args.count, cols: args.cols });
+    if (r.skipped) return { content: [{ type: 'text', text: `# Video frames — skipped\n${r.skipped}` }], structuredContent: r };
+    if (r.error) return { content: [{ type: 'text', text: `# Video frames — error\n${r.error}` }], structuredContent: r };
+    const list = (r.frames || []).map((f) => `f${f.frame} (${f.sec}s)`).join(', ');
+    const content = [{ type: 'text', text: `# Video frames — ${r.at}, ${(r.frames || []).length} of ${r.totalFrames}f\nrow-major (left→right, top→bottom): ${list}` }];
+    if (r.sheet && r.sheet.url) {
+      try {
+        const imgRes = await fetch(BASE + r.sheet.url);
+        content.push({ type: 'image', data: Buffer.from(await imgRes.arrayBuffer()).toString('base64'), mimeType: 'image/png' });
+      } catch (e) { content.push({ type: 'text', text: `(could not load contact sheet: ${e.message})` }); }
+    }
+    return { content, structuredContent: r };
   }));
 
   server.registerTool('book_video_refine', {

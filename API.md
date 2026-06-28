@@ -120,6 +120,10 @@ product-showcase scene. → `{ plan, coherence }`
 ### `POST /api/video-refine` *(model)* — `{ plan, critique?, instruction?, verify? }` → edited plan.
 ### `POST /api/video-render` — `{ plan | genre | pageSlug }` → `{ ok, slug, url, bytes, durationFrames, dimensions }` (mp4 at `/book/shots/...`). Streams progress on SSE (`{type:'video-render', slug, progress}`).
 ### `GET /api/video-render` — `{ available }` (is the Remotion install present).
+### `POST /api/video-frames` *(free — renders stills)*
+Body: `{ plan | genre | pageSlug, frames?:[12,38], at?:"arc"|"transitions"|"scene-starts", count?, cols? }` — renders a set of frames and returns ONE **labeled contact-sheet** image (each tile stamped `f<n>` + timestamp) for visual diagnosis — hand a UI/agent "the frames at a place" in a single picture. `at:"arc"` (default) spaces `count` frames across the whole video; `"transitions"` grabs frames around each cut; `"scene-starts"` the entry+mid of each scene.
+→ `{ ok, fps, totalFrames, at, frames:[{frame, sec, url}], sheet:{url, cols, rows} }`
+The visual companion to diagnose; `book_video_frames` exposes it on the MCP (returns the sheet inline).
 
 ### `POST /api/video-diagnose` *(deterministic core free; vision optional)*
 Body: `{ plan | genre | pageSlug, mp4Path?, vision? }` — the video equivalent of
