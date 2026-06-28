@@ -1,5 +1,6 @@
 import { Composition, AbsoluteFill, Audio, Sequence, staticFile } from 'remotion';
 import { TransitionSeries, linearTiming } from '@remotion/transitions';
+import { CameraMotionBlur } from '@remotion/motion-blur';
 import { fade } from '@remotion/transitions/fade';
 import { slide } from '@remotion/transitions/slide';
 import { wipe } from '@remotion/transitions/wipe';
@@ -21,6 +22,7 @@ export type VideoPlan = {
   height?: number;
   totalDurationInFrames?: number;
   sfx?: boolean;
+  motionBlur?: boolean;
   audio?: { music?: { src: string; volume?: number }; voiceover?: { src: string; volume?: number } };
   captions?: { text: string; fromFrame: number; toFrame: number }[];
 };
@@ -137,9 +139,13 @@ export const VideoFromPlan = ({ plan }: { plan: VideoPlan }) => {
     const next = p.scenes[i + 1];
     start += (sc.durationInFrames || 0) - (next && next.transition ? TRANSITION_FRAMES : 0);
   });
+  // Film-shutter motion blur over the moving content (audio stays outside it).
+  // Re-samples each frame `samples`× across a 180° shutter — the biggest CG→film
+  // jump. plan.motionBlur:false disables it for fast preview renders.
+  const series = <TransitionSeries>{children}</TransitionSeries>;
   return (
     <AbsoluteFill style={{ backgroundColor: bg }}>
-      <TransitionSeries>{children}</TransitionSeries>
+      {p.motionBlur === false ? series : <CameraMotionBlur shutterAngle={180} samples={4}>{series}</CameraMotionBlur>}
       {/* cinematic vignette — subtle edge darkening so scenes don't read flat/digital */}
       <AbsoluteFill style={{ boxShadow: 'inset 0 0 320px rgba(0,0,0,0.4)', pointerEvents: 'none' }} />
       <CaptionLayer captions={p.captions} />

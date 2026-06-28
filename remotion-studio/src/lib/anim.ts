@@ -65,3 +65,14 @@ export const exitDrift = (frame: number, dur: number, leave = 18) => {
 /** odometer count-up — rushes then decelerates (eased+overshoot), unlike a linear ramp. */
 export const countUp = (frame: number, fps: number, target: number, inF = 0, cfg: Cfg = SPRINGS.hero) =>
   Math.round(target * Math.min(1, Math.max(0, sp(frame, fps, cfg, inF))));
+
+/** secondary motion — a child trails its parent: evaluate the child's entrance at a
+ *  lagged frame so it follows THROUGH after the parent lands (the alive-vs-robotic tell). */
+export const lagFrame = (frame: number, lag = 4) => Math.max(0, frame - lag);
+
+/** follow-through jiggle — a damped oscillation that fires once an element LANDS (at
+ *  `start`) and decays to nothing. Adds the secondary bounce after a spring settles. */
+export const jiggle = (frame: number, start: number, amp = 6, freq = 0.55, decay = 9) => {
+  const t = frame - start;
+  return t < 0 ? 0 : amp * Math.exp(-t / decay) * Math.sin(t * freq);
+};
