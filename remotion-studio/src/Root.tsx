@@ -5,6 +5,7 @@ import { fade } from '@remotion/transitions/fade';
 import { slide } from '@remotion/transitions/slide';
 import { wipe } from '@remotion/transitions/wipe';
 import { SCENE_COMPONENTS } from './registry';
+import { ShaderBackground } from './lib/ShaderBackground';
 import type { Theme } from './lib/getSceneStyles';
 
 const TRANSITION_FRAMES = 14; // must match designbook/lib/videoplan.js TRANSITION_FRAMES
@@ -145,6 +146,8 @@ export const VideoFromPlan = ({ plan }: { plan: VideoPlan }) => {
   const series = <TransitionSeries>{children}</TransitionSeries>;
   return (
     <AbsoluteFill style={{ backgroundColor: bg }}>
+      {/* shared evolving shader background (behind everything; scenes are transparent over it) */}
+      <ShaderBackground />
       {p.motionBlur === false ? series : <CameraMotionBlur shutterAngle={180} samples={4}>{series}</CameraMotionBlur>}
       {/* cinematic vignette — subtle edge darkening so scenes don't read flat/digital */}
       <AbsoluteFill style={{ boxShadow: 'inset 0 0 320px rgba(0,0,0,0.4)', pointerEvents: 'none' }} />
