@@ -1,0 +1,436 @@
+{
+  "library": "designbook-sfx",
+  "description": "Owner-supplied UI/video sound-effect pack. The 7-slot video mapping copies picks into remotion-studio/public/sfx/; swap from here by name.",
+  "count": 34,
+  "categories": {
+    "click": 7,
+    "counter": 4,
+    "data": 1,
+    "digital": 1,
+    "texture": 3,
+    "whoosh": 7,
+    "hover": 1,
+    "interface": 3,
+    "paper": 1,
+    "rise": 1,
+    "typing": 5
+  },
+  "sounds": [
+    {
+      "name": "click 2 [short]",
+      "file": "click 2 [short].mp3",
+      "category": "click",
+      "role": "UI click — button / select / pointer",
+      "durationSec": 2.33,
+      "mappedSlot": null,
+      "tags": [
+        "click",
+        "short"
+      ]
+    },
+    {
+      "name": "click 3 [all layers]",
+      "file": "click 3 [all layers].mp3",
+      "category": "click",
+      "role": "UI click — button / select / pointer",
+      "durationSec": 0.38,
+      "mappedSlot": "click",
+      "tags": [
+        "click",
+        "all",
+        "layers"
+      ]
+    },
+    {
+      "name": "click 3 [layer 1]",
+      "file": "click 3 [layer 1].mp3",
+      "category": "click",
+      "role": "UI click — button / select / pointer",
+      "durationSec": 0.38,
+      "mappedSlot": "key",
+      "tags": [
+        "click",
+        "layer"
+      ]
+    },
+    {
+      "name": "click 3 [layer 2]",
+      "file": "click 3 [layer 2].mp3",
+      "category": "click",
+      "role": "UI click — button / select / pointer",
+      "durationSec": 0.38,
+      "mappedSlot": null,
+      "tags": [
+        "click",
+        "layer"
+      ]
+    },
+    {
+      "name": "click 4",
+      "file": "click 4.mp3",
+      "category": "click",
+      "role": "UI click — button / select / pointer",
+      "durationSec": 0.82,
+      "mappedSlot": null,
+      "tags": [
+        "click"
+      ]
+    },
+    {
+      "name": "click [complex, reverb]",
+      "file": "click [complex, reverb].mp3",
+      "category": "click",
+      "role": "UI click — button / select / pointer",
+      "durationSec": 1.37,
+      "mappedSlot": null,
+      "tags": [
+        "click",
+        "complex",
+        "reverb"
+      ]
+    },
+    {
+      "name": "click [short]",
+      "file": "click [short].mp3",
+      "category": "click",
+      "role": "UI click — button / select / pointer",
+      "durationSec": 1.39,
+      "mappedSlot": null,
+      "tags": [
+        "click",
+        "short"
+      ]
+    },
+    {
+      "name": "count [all layers]",
+      "file": "count [all layers].mp3",
+      "category": "counter",
+      "role": "number count-up / metric tick (StatBurst)",
+      "durationSec": 0.82,
+      "mappedSlot": "pop",
+      "tags": [
+        "counter",
+        "count",
+        "all",
+        "layers"
+      ]
+    },
+    {
+      "name": "count [layer 1. long]",
+      "file": "count [layer 1. long].mp3",
+      "category": "counter",
+      "role": "number count-up / metric tick (StatBurst)",
+      "durationSec": 1.75,
+      "mappedSlot": null,
+      "tags": [
+        "counter",
+        "count",
+        "layer",
+        "long"
+      ]
+    },
+    {
+      "name": "count [layer 2]",
+      "file": "count [layer 2].mp3",
+      "category": "counter",
+      "role": "number count-up / metric tick (StatBurst)",
+      "durationSec": 0.82,
+      "mappedSlot": null,
+      "tags": [
+        "counter",
+        "count",
+        "layer"
+      ]
+    },
+    {
+      "name": "count [layer 3]",
+      "file": "count [layer 3].mp3",
+      "category": "counter",
+      "role": "number count-up / metric tick (StatBurst)",
+      "durationSec": 1.15,
+      "mappedSlot": null,
+      "tags": [
+        "counter",
+        "count",
+        "layer"
+      ]
+    },
+    {
+      "name": "data [long]",
+      "file": "data [long].mp3",
+      "category": "data",
+      "role": "data / number reveal",
+      "durationSec": 1.9,
+      "mappedSlot": null,
+      "tags": [
+        "data",
+        "long"
+      ]
+    },
+    {
+      "name": "digital",
+      "file": "digital.mp3",
+      "category": "digital",
+      "role": "digital confirm / blip",
+      "durationSec": 1.06,
+      "mappedSlot": null,
+      "tags": [
+        "digital"
+      ]
+    },
+    {
+      "name": "granular 1",
+      "file": "granular 1.mp3",
+      "category": "texture",
+      "role": "ambient/granular texture (loopable bed candidate)",
+      "durationSec": 1.85,
+      "mappedSlot": null,
+      "tags": [
+        "texture",
+        "granular"
+      ]
+    },
+    {
+      "name": "granular 2",
+      "file": "granular 2.mp3",
+      "category": "texture",
+      "role": "ambient/granular texture (loopable bed candidate)",
+      "durationSec": 2.02,
+      "mappedSlot": null,
+      "tags": [
+        "texture",
+        "granular"
+      ]
+    },
+    {
+      "name": "granular 3",
+      "file": "granular 3.mp3",
+      "category": "texture",
+      "role": "ambient/granular texture (loopable bed candidate)",
+      "durationSec": 2.26,
+      "mappedSlot": null,
+      "tags": [
+        "texture",
+        "granular"
+      ]
+    },
+    {
+      "name": "granular whoosh",
+      "file": "granular whoosh.mp3",
+      "category": "whoosh",
+      "role": "transition — textured swish",
+      "durationSec": 2.14,
+      "mappedSlot": null,
+      "tags": [
+        "whoosh",
+        "granular"
+      ]
+    },
+    {
+      "name": "hover",
+      "file": "hover.mp3",
+      "category": "hover",
+      "role": "pointer hover / cursor-arrives",
+      "durationSec": 1.9,
+      "mappedSlot": null,
+      "tags": [
+        "hover"
+      ]
+    },
+    {
+      "name": "interface 2 ",
+      "file": "interface 2 .mp3",
+      "category": "interface",
+      "role": "interface open / confirm",
+      "durationSec": 1.75,
+      "mappedSlot": null,
+      "tags": [
+        "interface"
+      ]
+    },
+    {
+      "name": "interface [reverb]",
+      "file": "interface [reverb].mp3",
+      "category": "interface",
+      "role": "interface open / confirm",
+      "durationSec": 2.33,
+      "mappedSlot": null,
+      "tags": [
+        "interface",
+        "reverb"
+      ]
+    },
+    {
+      "name": "interface open [small]",
+      "file": "interface open [small].mp3",
+      "category": "interface",
+      "role": "interface open / confirm",
+      "durationSec": 1.1,
+      "mappedSlot": "success",
+      "tags": [
+        "interface",
+        "open",
+        "small"
+      ]
+    },
+    {
+      "name": "paper",
+      "file": "paper.mp3",
+      "category": "paper",
+      "role": "paper / soft reveal",
+      "durationSec": 1.63,
+      "mappedSlot": null,
+      "tags": [
+        "paper"
+      ]
+    },
+    {
+      "name": "rise [reverb]",
+      "file": "rise [reverb].mp3",
+      "category": "rise",
+      "role": "rising confirmation (CTA landing)",
+      "durationSec": 2.09,
+      "mappedSlot": "chime",
+      "tags": [
+        "rise",
+        "reverb"
+      ]
+    },
+    {
+      "name": "text [all layers]",
+      "file": "text [all layers].mp3",
+      "category": "typing",
+      "role": "typing / text-reveal (per-key or one-shot sweep)",
+      "durationSec": 2.26,
+      "mappedSlot": null,
+      "tags": [
+        "typing",
+        "text",
+        "all",
+        "layers"
+      ]
+    },
+    {
+      "name": "text [layer1, long]",
+      "file": "text [layer1, long].mp3",
+      "category": "typing",
+      "role": "typing / text-reveal (per-key or one-shot sweep)",
+      "durationSec": 2.3,
+      "mappedSlot": null,
+      "tags": [
+        "typing",
+        "text",
+        "layer1",
+        "long"
+      ]
+    },
+    {
+      "name": "text [layer2, long]",
+      "file": "text [layer2, long].mp3",
+      "category": "typing",
+      "role": "typing / text-reveal (per-key or one-shot sweep)",
+      "durationSec": 1.66,
+      "mappedSlot": null,
+      "tags": [
+        "typing",
+        "text",
+        "layer2",
+        "long"
+      ]
+    },
+    {
+      "name": "text [layer3, long]",
+      "file": "text [layer3, long].mp3",
+      "category": "typing",
+      "role": "typing / text-reveal (per-key or one-shot sweep)",
+      "durationSec": 2.26,
+      "mappedSlot": null,
+      "tags": [
+        "typing",
+        "text",
+        "layer3",
+        "long"
+      ]
+    },
+    {
+      "name": "text [layer4, short]",
+      "file": "text [layer4, short].mp3",
+      "category": "typing",
+      "role": "typing / text-reveal (per-key or one-shot sweep)",
+      "durationSec": 1.06,
+      "mappedSlot": null,
+      "tags": [
+        "typing",
+        "text",
+        "layer4",
+        "short"
+      ]
+    },
+    {
+      "name": "whoosh 1",
+      "file": "whoosh 1.mp3",
+      "category": "whoosh",
+      "role": "transition — scene-to-scene swish",
+      "durationSec": 1.2,
+      "mappedSlot": null,
+      "tags": [
+        "whoosh"
+      ]
+    },
+    {
+      "name": "whoosh 2",
+      "file": "whoosh 2.mp3",
+      "category": "whoosh",
+      "role": "transition — scene-to-scene swish",
+      "durationSec": 0.96,
+      "mappedSlot": null,
+      "tags": [
+        "whoosh"
+      ]
+    },
+    {
+      "name": "whoosh 3",
+      "file": "whoosh 3.mp3",
+      "category": "whoosh",
+      "role": "transition — scene-to-scene swish",
+      "durationSec": 0.77,
+      "mappedSlot": "whoosh",
+      "tags": [
+        "whoosh"
+      ]
+    },
+    {
+      "name": "whoosh 4",
+      "file": "whoosh 4.mp3",
+      "category": "whoosh",
+      "role": "transition — scene-to-scene swish",
+      "durationSec": 2.33,
+      "mappedSlot": null,
+      "tags": [
+        "whoosh"
+      ]
+    },
+    {
+      "name": "whoosh 5",
+      "file": "whoosh 5.mp3",
+      "category": "whoosh",
+      "role": "transition — scene-to-scene swish",
+      "durationSec": 0.96,
+      "mappedSlot": null,
+      "tags": [
+        "whoosh"
+      ]
+    },
+    {
+      "name": "whoosh 6",
+      "file": "whoosh 6.mp3",
+      "category": "whoosh",
+      "role": "transition — scene-to-scene swish",
+      "durationSec": 1.9,
+      "mappedSlot": null,
+      "tags": [
+        "whoosh"
+      ]
+    }
+  ]
+}
