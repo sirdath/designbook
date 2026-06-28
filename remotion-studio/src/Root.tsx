@@ -54,7 +54,9 @@ const CaptionLayer = ({ captions }: { captions?: VideoPlan['captions'] }) => {
 };
 
 // Per-sound mix levels (the pad sits under everything; keystrokes are a whisper).
-const SFX_VOL: Record<string, number> = { whoosh: 0.5, pop: 0.7, chime: 0.6, click: 0.55, key: 0.3, success: 0.72 };
+// real SFX pack (designbook/remotion-studio/sfx-pack/, mapped into public/sfx/) —
+// files are pre-normalized; these are per-slot mix trims.
+const SFX_VOL: Record<string, number> = { whoosh: 0.55, pop: 0.55, chime: 0.5, click: 0.7, key: 0.6, success: 0.55 };
 
 // SFX layer: whoosh leads each transition, pop punches StatBurst, chime lands CTA,
 // and UIDemo gets a full Foley pass — a keystroke per typed char, a click on the
@@ -84,7 +86,7 @@ const SfxLayer = ({ scenes, fps = 30 }: { scenes: Scene[]; fps?: number }) => {
   return (
     <>
       {events.map((e, i) => (
-        <Sequence key={i} from={e.frame} durationInFrames={50}>
+        <Sequence key={i} from={e.frame} durationInFrames={75}>
           <Audio src={staticFile('sfx/' + e.sfx + '.mp3')} volume={SFX_VOL[e.sfx] ?? 0.6} />
         </Sequence>
       ))}

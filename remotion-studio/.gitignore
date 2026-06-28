@@ -7,3 +7,4 @@ tr-*
 render-check.mjs
 *.mp4
 out/
+sfx-pack/
